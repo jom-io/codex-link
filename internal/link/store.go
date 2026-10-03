@@ -32,6 +32,7 @@ func OpenStore(home string) (*Store, error) {
 	_, e = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,direction TEXT NOT NULL,status TEXT NOT NULL,owner TEXT NOT NULL DEFAULT '',lease INTEGER NOT NULL DEFAULT 0,result TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pairs(peer_id TEXT PRIMARY KEY,body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS files(message_id TEXT PRIMARY KEY,path TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS inbox ON messages(direction,seq);
 CREATE INDEX IF NOT EXISTS outbox ON messages(direction,status);`)
@@ -107,7 +108,7 @@ func (s *Store) List(ctx context.Context, after int64, limit int, history bool, 
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-	q := "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE seq>? AND json_extract(body,'$.kind')!='receipt'"
+	q := "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE seq>? AND json_extract(body,'$.kind')!='receipt' AND json_extract(body,'$.kind') NOT LIKE 'pair_%'"
 	args := []any{after}
 	if !history {
 		q += " AND direction='in'"
@@ -130,7 +131,7 @@ func (s *Store) List(ctx context.Context, after int64, limit int, history bool, 
 	return scanRecords(rows)
 }
 func (s *Store) Pending(ctx context.Context) ([]Record, error) {
-	rows, e := s.db.QueryContext(ctx, "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE direction='out' AND status='pending' ORDER BY seq LIMIT 100")
+	rows, e := s.db.QueryContext(ctx, "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE direction='out' AND status='pending' ORDER BY CASE WHEN json_extract(body,'$.kind') LIKE 'pair_%' THEN 0 ELSE 1 END,seq LIMIT 100")
 	if e != nil {
 		return nil, e
 	}

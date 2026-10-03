@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 var Version = "dev"
 
@@ -19,19 +19,20 @@ type FileRef struct {
 	SHA256 string `json:"sha256"`
 }
 type Message struct {
-	ID           string    `json:"id"`
-	Protocol     int       `json:"protocol"`
-	From         string    `json:"from"`
-	To           string    `json:"to"`
-	FromName     string    `json:"from_name"`
-	Session      string    `json:"session,omitempty"`
-	ToSession    string    `json:"to_session,omitempty"`
-	Conversation string    `json:"conversation,omitempty"`
-	Kind         string    `json:"kind"`
-	Text         string    `json:"text,omitempty"`
-	ReplyTo      string    `json:"reply_to,omitempty"`
-	File         *FileRef  `json:"file,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string     `json:"id"`
+	Protocol     int        `json:"protocol"`
+	From         string     `json:"from"`
+	To           string     `json:"to"`
+	FromName     string     `json:"from_name"`
+	Session      string     `json:"session,omitempty"`
+	ToSession    string     `json:"to_session,omitempty"`
+	Conversation string     `json:"conversation,omitempty"`
+	Kind         string     `json:"kind"`
+	Text         string     `json:"text,omitempty"`
+	ReplyTo      string     `json:"reply_to,omitempty"`
+	File         *FileRef   `json:"file,omitempty"`
+	Pair         *PairOffer `json:"pair,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 type Record struct {
 	Seq        int64   `json:"seq"`
@@ -43,10 +44,14 @@ type Record struct {
 	Result     string  `json:"result,omitempty"`
 }
 type Peer struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Protocol int       `json:"protocol"`
-	SeenAt   time.Time `json:"seen_at"`
+	SignPublic     string    `json:"sign_public"`
+	ExchangePublic string    `json:"exchange_public"`
+	Signature      string    `json:"signature"`
+	Paired         bool      `json:"paired"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Protocol       int       `json:"protocol"`
+	SeenAt         time.Time `json:"seen_at"`
 }
 
 func NewID() string {
@@ -83,6 +88,10 @@ func (m Message) Validate() error {
 		return errors.New("message text exceeds 64 KiB")
 	}
 	switch m.Kind {
+	case "pair_request", "pair_accept", "pair_reject":
+		if m.Pair == nil || !ValidLabel(m.Pair.RequestID) || !ValidLabel(m.Pair.Nonce) {
+			return errors.New("invalid pairing offer")
+		}
 	case "text", "task", "progress", "result":
 		if strings.TrimSpace(m.Text) == "" {
 			return errors.New("text is required")

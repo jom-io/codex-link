@@ -154,7 +154,7 @@ func NewFiles(c Config, s Secrets, home string) (*Files, error) {
 	root := strings.Trim(c.OSS.Prefix, "/") + "/" + hex.EncodeToString(h[:8]) + "/"
 	return &Files{bucket, c, s, home, root}, nil
 }
-func (f *Files) Upload(ctx context.Context, path, to string) (*FileRef, error) {
+func (f *Files) Upload(ctx context.Context, path, to, key string) (*FileRef, error) {
 	if !ValidLabel(to) {
 		return nil, errors.New("invalid recipient")
 	}
@@ -179,7 +179,7 @@ func (f *Files) Upload(ctx context.Context, path, to string) (*FileRef, error) {
 	}
 	defer os.Remove(tmp.Name())
 	object := f.root + to + "/" + NewID()
-	n, hash, e := encryptFile(tmp, src, f.secrets.WorkspaceKey, object, f.config.MaxFileBytes)
+	n, hash, e := encryptFile(tmp, src, key, object, f.config.MaxFileBytes)
 	ce := tmp.Close()
 	if e != nil {
 		return nil, e
@@ -192,7 +192,7 @@ func (f *Files) Upload(ctx context.Context, path, to string) (*FileRef, error) {
 	}
 	return &FileRef{object, filepath.Base(path), n, hash}, nil
 }
-func (f *Files) Download(ctx context.Context, m Message) (string, error) {
+func (f *Files) Download(ctx context.Context, m Message, key string) (string, error) {
 	if m.File == nil {
 		return "", errors.New("message has no file")
 	}
@@ -232,7 +232,7 @@ func (f *Files) Download(ctx context.Context, m Message) (string, error) {
 		return "", e
 	}
 	defer os.Remove(tmp.Name())
-	n, hash, e := decryptFile(tmp, body, f.secrets.WorkspaceKey, r.Object, f.config.MaxFileBytes)
+	n, hash, e := decryptFile(tmp, body, key, r.Object, f.config.MaxFileBytes)
 	ce := tmp.Close()
 	if e != nil {
 		return "", e
@@ -262,13 +262,14 @@ func (f *Files) Check(ctx context.Context) error {
 		return e
 	}
 	tmp.Close()
-	ref, e := f.Upload(ctx, tmp.Name(), f.config.DeviceID)
+	key := NewID() + NewID()
+	ref, e := f.Upload(ctx, tmp.Name(), f.config.DeviceID, key)
 	if e != nil {
 		return e
 	}
 	defer f.bucket.DeleteObject(ref.Object, oss.WithContext(ctx))
 	m := Message{ID: NewID(), File: ref}
-	p, e := f.Download(ctx, m)
+	p, e := f.Download(ctx, m, key)
 	if e != nil {
 		return e
 	}

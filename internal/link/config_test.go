@@ -20,7 +20,6 @@ oss:
   bucket: private
 credentials:
   redis_password: secret-password
-  workspace_key: 0123456789abcdef0123456789abcdef0123456789abcdef
   access_key_id: test-id
   access_key_secret: test-secret
 `
@@ -42,7 +41,7 @@ credentials:
 		t.Fatal(e)
 	}
 	b, _ := os.ReadFile(ConfigPath(home))
-	for _, secret := range []string{s.RedisPassword, s.WorkspaceKey, s.AccessKeySecret, "credentials"} {
+	for _, secret := range []string{s.RedisPassword, s.AccessKeySecret, "credentials"} {
 		if strings.Contains(string(b), secret) {
 			t.Fatal("credential leaked into persisted config")
 		}

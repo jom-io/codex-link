@@ -19,7 +19,7 @@ Requires Go 1.25+. A source ZIP requires extraction and the same build step. Do 
 
 ## Credentials
 
-Copy `config.example.yaml` to `config.local.yaml` and let the user edit locally. Protect the filled file with `chmod 600`. Import using `codex-link init --config /absolute/path/config.local.yaml`. Two Macs share the workspace name, random pairing key, OSS bucket/prefix; their device IDs are generated independently and their display names should differ. Redis credentials may differ if ACLs permit access to the same namespace. Use TLS over public networks.
+Copy `config.example.yaml` to `config.local.yaml` and let the user edit locally. Protect the filled file with `chmod 600`. Import using `codex-link init --config /absolute/path/config.local.yaml`. Two Macs share the workspace name and OSS bucket/prefix; their device IDs are generated independently and their display names should differ. No shared encryption key is configured. Device keys are generated into Keychain; first contact opens matching-code confirmation dialogs on both Macs. Redis credentials may differ if ACLs permit access to the same namespace. Use TLS over public networks.
 
 The first provider implementation is Aliyun OSS. Use an HTTPS regional endpoint, private bucket and prefix-restricted RAM credentials. STS additionally needs its security token and manual renewal before expiration. If Redis only supports plaintext, the user must explicitly set `tls: false` and `allow_insecure: true`; payload encryption does not protect the Redis password in transit.
 

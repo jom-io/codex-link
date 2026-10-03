@@ -3,8 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -35,7 +33,6 @@ func help() {
 	fmt.Print(`codex-link — encrypted cooperation between your Macs
 
 Setup:
-  keygen                         Generate a workspace pairing key (keep private)
   init [--config FILE] [--secrets-env]   Save config and Keychain credentials
   configure [same options]       Update credentials/config; restart daemon afterward
   doctor [--files]                Test Redis and optional OSS round trip
@@ -48,6 +45,7 @@ Communication (JSON output):
   inbox|history [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
   wait [--after SEQ] [--timeout 30] [--session NAME] [--conversation NAME]
   get ID
+  pair list|request --to NAME|accept ID --code CODE|reject ID --code CODE
   file send --to NAME_OR_ID --path FILE [--conversation NAME]
   file fetch ID
   task claim ID --session NAME [--lease 900]  (also renews your lease)
@@ -68,13 +66,6 @@ func run(args []string) error {
 	case "version", "--version":
 		fmt.Println(link.Version)
 		return nil
-	case "keygen":
-		b := make([]byte, 32)
-		if _, e := rand.Read(b); e != nil {
-			return e
-		}
-		fmt.Println(base64.RawURLEncoding.EncodeToString(b))
-		return nil
 	case "init", "configure":
 		return initialize(home, args[1:])
 	case "doctor":
@@ -92,7 +83,7 @@ func run(args []string) error {
 	}
 	op := args[0]
 	rest := args[1:]
-	if op == "file" || op == "task" {
+	if op == "file" || op == "task" || op == "pair" {
 		if len(rest) < 1 {
 			return errors.New("missing operation")
 		}
@@ -100,12 +91,12 @@ func run(args []string) error {
 		rest = rest[1:]
 	}
 	switch op {
-	case "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/claim", "task/complete":
+	case "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
 	default:
 		return errors.New("unknown command; use --help")
 	}
 	var a link.APIRequest
-	if op == "get" || op == "file/fetch" || op == "task/claim" || op == "task/complete" {
+	if op == "get" || op == "file/fetch" || op == "task/claim" || op == "task/complete" || op == "pair/accept" || op == "pair/reject" {
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
 			return errors.New("message/task ID required before flags")
 		}
@@ -114,6 +105,7 @@ func run(args []string) error {
 	}
 	fs := flag.NewFlagSet(op, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.StringVar(&a.Code, "code", "", "pairing verification code")
 	fs.StringVar(&a.To, "to", "", "recipient device name or ID")
 	fs.StringVar(&a.Text, "text", "", "message text")
 	fs.StringVar(&a.Kind, "kind", "text", "message type")
@@ -202,7 +194,6 @@ func initialize(home string, args []string) error {
 	}
 	if *secretsEnv {
 		s.RedisPassword = os.Getenv("CODEX_LINK_REDIS_PASSWORD")
-		s.WorkspaceKey = os.Getenv("CODEX_LINK_WORKSPACE_KEY")
 		s.AccessKeyID = os.Getenv("CODEX_LINK_OSS_ACCESS_KEY_ID")
 		s.AccessKeySecret = os.Getenv("CODEX_LINK_OSS_ACCESS_KEY_SECRET")
 		s.SecurityToken = os.Getenv("CODEX_LINK_OSS_SECURITY_TOKEN")
@@ -210,8 +201,11 @@ func initialize(home string, args []string) error {
 			return errors.New("--secrets-env requires --config for a new installation")
 		}
 	}
-	if fileSecrets.WorkspaceKey != "" {
-		s = fileSecrets
+	if fileSecrets.RedisPassword != "" {
+		s.RedisPassword = fileSecrets.RedisPassword
+		s.AccessKeyID = fileSecrets.AccessKeyID
+		s.AccessKeySecret = fileSecrets.AccessKeySecret
+		s.SecurityToken = fileSecrets.SecurityToken
 	}
 	reader := bufio.NewReader(os.Stdin)
 	ask := func(label, current string) (string, error) {
@@ -279,11 +273,8 @@ func initialize(home string, args []string) error {
 			}
 		}
 	}
-	if !*secretsEnv && fileSecrets.WorkspaceKey == "" {
+	if !*secretsEnv && fileSecrets.RedisPassword == "" {
 		if s.RedisPassword, e = secret("Redis password", s.RedisPassword); e != nil {
-			return e
-		}
-		if s.WorkspaceKey, e = secret("Shared workspace key (generate separately with keygen)", s.WorkspaceKey); e != nil {
 			return e
 		}
 		if c.OSS.Endpoint != "" {
@@ -299,7 +290,7 @@ func initialize(home string, args []string) error {
 		}
 	}
 	c.Defaults()
-	if strings.Contains(s.WorkspaceKey, "CHANGE_ME") || strings.Contains(c.Redis.Address, "CHANGE_ME") || strings.Contains(s.AccessKeyID, "CHANGE_ME") {
+	if strings.Contains(c.Redis.Address, "CHANGE_ME") || strings.Contains(s.AccessKeyID, "CHANGE_ME") {
 		return errors.New("fill in the configuration template before initialization")
 	}
 	if e = c.Validate(); e != nil {
@@ -311,6 +302,14 @@ func initialize(home string, args []string) error {
 	if c.OSS.Endpoint != "" && (c.OSS.Bucket == "" || s.AccessKeyID == "" || s.AccessKeySecret == "") {
 		return errors.New("OSS bucket and credentials are required when OSS is enabled")
 	}
+	identity, identityErr := link.EnsureIdentity(&s)
+	if identityErr != nil {
+		return identityErr
+	}
+	if existing && c.DeviceID != identity.ID() {
+		return errors.New("existing device identity cannot be replaced silently")
+	}
+	c.DeviceID = identity.ID()
 	if e = link.SaveSecrets(c, s); e != nil {
 		return fmt.Errorf("save Keychain credentials: %w", e)
 	}

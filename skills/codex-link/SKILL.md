@@ -11,10 +11,16 @@ Use the codex-link CLI to cooperate with another Mac. All sessions under one mac
 
 1. Run `command -v codex-link`, or check `$HOME/.local/bin/codex-link`.
 2. If missing, read `references/setup.md`. Prefer a pinned stable GitHub Release from `jom-io/codex-link`. Run the included `scripts/install.sh`; only use source builds when requested or no release exists. Do not silently install a Go toolchain.
-3. Ask the user to edit an ignored `config.local.yaml` copied from the repository's `config.example.yaml`. Redis passwords, OSS credentials and the workspace key must be entered locally, not pasted in the chat. The user can generate a key in their terminal with `codex-link keygen` and copy it privately to the second Mac.
+3. Ask the user to edit an ignored `config.local.yaml` copied from the repository's `config.example.yaml`. Redis passwords and OSS credentials must be entered locally, not pasted in the chat. Device identities and encryption keys are generated automatically; never ask for a workspace key.
 4. Initialize with `codex-link init --config /absolute/path/config.local.yaml`. This imports credentials into Keychain. Never print, attach or commit the filled YAML.
 5. Run `codex-link doctor --files`, then `codex-link daemon start`. On reconfiguration, stop the daemon first and restart after importing.
-6. Check `codex-link status --json` and `codex-link peers --json`. Device names must resolve uniquely. Both devices need the same workspace and key. Use device IDs for offline peers or duplicate names.
+6. Check `codex-link status --json` and `codex-link peers --json`. Device names must resolve uniquely. Both devices need the same workspace and compatible Redis/OSS access. Use device IDs for offline peers or duplicate names.
+
+## First-contact pairing
+
+Send normally. If the result is `pairing_pending`, the application displays a native dialog on each Mac. Tell the user to compare the six-digit code on both Macs and confirm the intended devices. Do not click confirmation or call `pair accept` on the human's behalf without explicit authorization. Only one approval is insufficient. Pending text/task messages send automatically once both approve.
+
+`pair list` shows pending/confirmed pairs. For intentionally headless use, request explicit human confirmation and call `pair accept REQUEST_ID --code CODE` on that local device; rejection uses `pair reject`. New devices require their own pairwise confirmations. Do not infer trust from a name or Redis access alone. If file send returns pairing_pending, wait for confirmation and retry that file send; no file content is uploaded before pairing.
 
 ## Communicate
 
@@ -45,4 +51,4 @@ Read `references/commands.md` for exact CLI forms. All communication commands re
 
 ## Operational limits
 
-An idle Codex chat is not automatically awakened. The daemon keeps receiving; an active session waits or reads its inbox. Redis stream retention and OSS lifecycle rules bound offline recovery. STS credentials currently require manual renewal. Workspace members share a group key and trust one another; this is not a multi-tenant service.
+An idle Codex chat is not automatically awakened. The daemon keeps receiving; an active session waits or reads its inbox. Redis stream retention and OSS lifecycle rules bound offline recovery. STS credentials currently require manual renewal. Confirmed devices use pairwise keys; workspace discovery does not grant communication access. This is not a multi-tenant service.

@@ -1,34 +1,35 @@
-# Architecture and protocol v1
+# Architecture and protocol v2
 
-A single Go binary provides a transient CLI and a per-user daemon. CLI calls use POST JSON over a 0600 Unix socket; no network HTTP listener is opened. A filesystem lock prevents duplicate daemons. SQLite uses WAL with one connection and transactional updates.
+A single Go binary provides a transient CLI and a per-user daemon. CLI calls use JSON over a 0600 Unix socket, with no public HTTP listener. A filesystem lock prevents duplicate daemons. SQLite uses WAL and transactional updates. All windows under one macOS user share the store/cache; session aliases route messages but are not a sandbox.
+
+## Identity and first-contact pairing
+
+Initialization automatically generates Ed25519 signing and X25519 exchange keys, stored only in Keychain alongside cloud credentials. Device ID is a SHA-256-derived identifier of the signing public key. Signed discovery advertisements bind the name, ID, exchange public key and heartbeat timestamp. The public Redis registry is discoverable without a shared encryption key.
+
+1. First send discovers the target and saves a signed pairing request with both identities, a fresh nonce and ten-minute expiration.
+2. Both daemons save the pending request and display a native local confirmation dialog. The six-digit short authentication code binds both identities and the nonce; humans should compare it on both physical devices.
+3. Each human confirmation persists a local decision and queues a signed acceptance. A pairing becomes ready only after local approval AND the verified remote approval.
+4. Pinned public keys and the transcript are stored locally. Each pair derives a unique AES key through X25519 and HKDF-SHA256, bound to workspace, pairing nonce and both identities. No encryption key is configured, transported in plaintext or manually copied.
+5. Deferred messages send only after pairing. A new device needs its own approvals and cannot inherit existing trust. Rejecting/timeouts leave ordinary messages unsent.
+
+Simultaneous requests converge on the lexicographically smaller request ID. A request does not authorize task execution. Public names are untrusted until verified through confirmation; self-signed discovery alone proves key possession, not a human's intended device. Comparing the displayed code and IDs is necessary to detect misdirection. Static pairwise exchange keys do not provide forward secrecy against later device-key compromise.
 
 ## Message lifecycle
 
-1. Validate a request and resolve the peer name (or accept its stable device ID).
-2. Persist an outgoing envelope to SQLite as pending.
-3. Append an AES-256-GCM encrypted envelope to the recipient's Redis Stream; a Lua script atomically adds a dedup marker and applies retention.
-4. Mark local status sent. A retry after a crash uses the same message ID.
-5. Receiver authenticates/validates the envelope, then atomically stores it, advances its Redis cursor and queues a receipt.
-6. Receipt updates delivery state only for a message whose destination matches the receipt sender.
+Outgoing messages are validated and saved to the SQLite outbox. A Lua script atomically adds an encrypted, signed envelope to the recipient's Redis Stream, sets its dedup marker, and applies retention. A crash after publish retries the same ID. Pairing decisions are sent before ordinary messages, so a receiver sees the acceptance before the first encrypted message.
 
-There is one Redis reader per device, not one per chat. Local windows read the same durable inbox with their own sequence cursor. This deliberately avoids consumer groups distributing messages across local windows. Invalid/unauthenticated envelopes are skipped with a generic log so a poison entry cannot stop the inbox; unsupported protocol versions are also rejected.
+Receiver verifies the sender signature, pinned identity, readiness and AES-GCM authentication. It atomically stores the message, advances its Redis cursor and queues a receipt. A receipt only updates a message whose destination matches its sender. One Redis reader per device supplies all windows' local inboxes; consumer groups do not divide messages between windows.
 
-Namespace: `cl:v1:{workspace-hash}:inbox:DEVICE_ID`, `sent:DEVICE_ID:MESSAGE_ID`, and `devices` registry. Redis hash tags keep publish-script keys in one cluster slot, but DB selection should be 0 for Redis Cluster and cluster client mode is not currently supported. Recommended deployment: standalone Redis or a compatible managed standalone endpoint.
+Pairing events contain public metadata and signatures, while ordinary message bodies are encrypted. Invalid, expired or unauthenticated entries are skipped with generic logs to prevent poison messages blocking reception. Namespace: `cl:v2:{workspace-hash}:inbox:DEVICE_ID`, `sent:DEVICE_ID:MESSAGE_ID`, and `devices`. Recommended deployment is standalone Redis; cluster/sentinel discovery is not implemented.
 
-## Cryptography and trust
+## Tasks and files
 
-A random shared workspace key derives separate message/file AES keys through domain-separated SHA-256. Messages bind workspace/protocol through associated data. File frames are 64 KiB with random nonces and authenticated object key/frame index, terminated by an authenticated empty frame. Complete files also carry size and SHA-256 inside the encrypted message metadata. Truncation, reordering, wrong object keys and tampering are rejected.
+Task claiming is a conditional SQLite update with an expiring lease. Completion validates ownership/lease, saves the result and queues a response in one transaction. After crashes, task-specific idempotency is required for exactly-once external effects.
 
-A shared group key authenticates membership, not distinct device ownership. Anyone with the group key can construct a peer message. Treat workspace members as trusted collaborators; infrastructure operators without the key cannot read message/file content, but can observe metadata, delete/replay ciphertext, or deny service. Local history/cache are protected by macOS user permissions and disk security, not encrypted by SQLite.
+Files use a domain-separated key derived from the confirmed pair. Each 64 KiB AES-GCM frame authenticates its object path and index; an authenticated empty terminal frame detects truncation. Encrypted message metadata contains plaintext size and SHA-256. Sender encrypts to a private temporary file and uploads with OSS V4 signatures. Receiver confines objects to its workspace/device prefix, decrypts to a temp file, verifies integrity, then atomically renames into a per-message cache directory. No automatic extraction or execution occurs. Operations are serialized to bound memory. OSS lifecycle rules clean orphaned objects.
 
-## Tasks
+## Lifecycle and boundaries
 
-Claim is a conditional SQLite update. A valid task can be owned by one session until its lease expires. Complete validates ownership/lease, saves the result, and queues the response in one transaction. A expired lease can be reclaimed; exactly-once external effects require task-specific idempotency. Session aliases route messages but do not sandbox windows.
+LaunchAgent runs after user login; Keychain must be available. Native confirmation uses macOS scripting additions, not an active Codex chat. `pairing_headless` disables dialogs and requires an explicit human-authorized local acceptance command. Connections retry; idle receiving uses blocking XREAD. Shutdown cancels requests, closes Redis, waits for workers and closes SQLite.
 
-## Files
-
-Sender encrypts a selected regular file to a private temporary file and uploads it using OSS V4 authentication. Receiver only accepts object paths under its own workspace/device prefix, downloads/decrypts to a private temp file, checks metadata, then atomically renames. Cache names are confined to a message-ID directory. Concurrent file operations are serialized to bound resource use. Temporary upload files and incomplete downloads are removed; OSS lifecycle handles orphaned remote objects.
-
-## Lifecycle
-
-LaunchAgent starts after macOS user login and can be stopped/uninstalled without destroying state. Connection errors retry with a delay; idle inbound reception uses blocking XREAD. Shutdown cancels requests, closes Redis, waits for workers, and closes SQLite. Configuration changes require stopping/restarting. Local daemon logs contain generic operational errors, not message bodies or credentials.
+Cloud operators see names/public keys, routing, timestamps, object paths and sizes; they can deny service or replay ciphertext. Local history/cache rely on user permissions and disk security, not SQLite encryption. Configuration changes preserve identity; lost identity keys cannot be silently replaced. No idle Codex wakeup, automatic STS refresh or remote command executor is present.

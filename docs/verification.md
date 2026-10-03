@@ -1,6 +1,6 @@
 # Verification record / 验证记录
 
-Local development verification: 2026-10-03, macOS arm64, Go 1.27.1. The module targets Go 1.25+.
+Automatic pairing revision included. Local development verification: 2026-10-03, macOS arm64, Go 1.27.1. The module targets Go 1.25+.
 
 ## Passed
 
@@ -9,7 +9,8 @@ Local development verification: 2026-10-03, macOS arm64, Go 1.27.1. The module t
 - `gofmt` and shell syntax checks for install, uninstall, packaging and skill installer scripts.
 - CLI `version` and `--help` smoke checks.
 - YAML import, unknown-field rejection and secret separation from runtime configuration.
-- AES-GCM envelope authentication, workspace/key mismatch rejection.
+- Automatic Ed25519/X25519 device identities, equal pairwise key derivation, signed messages and signature tamper rejection.
+- Both approvals required, mismatched confirmation-code rejection, rejected-peer blocking and isolation of an added third device.
 - File round trips (empty, partial/full chunks), truncation/tamper detection and size enforcement.
 - Signed OSS V4 upload/download through a local TLS HTTP fixture; plaintext is not stored in the fixture.
 - SQLite restart persistence, duplicate suppression, one-winner concurrent task claiming, ownership checks and transactional completion.
@@ -20,7 +21,7 @@ File encryption microbenchmark (1 MiB input, in-memory source, discarded output)
 ## Pending infrastructure-dependent checks
 
 - Real two-Mac Redis/OSS transfer, Redis TLS/ACL behavior, production OSS RAM policy and STS expiry.
-- LaunchAgent/Keychain initialization on both configured Macs.
+- LaunchAgent/Keychain initialization and actual native dialog clicks on both configured Macs.
 - Idle daemon CPU/RSS and long-running transfer measurements using actual configured services.
 - macOS notarization/signing (not supplied in this release).
 

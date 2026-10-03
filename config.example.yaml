@@ -1,8 +1,8 @@
 # codex-link 首次安装配置模板 / First-run configuration template
 # 填写 config.local.yaml；该文件已加入 .gitignore，切勿上传或发到聊天里。
 # Edit config.local.yaml; it is gitignored. Never commit or paste real credentials.
-# 两台 Mac 使用相同 workspace 和 workspace_key；name 应不同。
-# Both Macs share workspace and workspace_key, but have different names.
+# 两台 Mac 使用相同 workspace；首次联系时两边点击确认自动配对，name 应不同。
+# Both Macs share a workspace; confirm the first pairing on both devices. Names differ.
 # 导入：codex-link init --config /absolute/path/config.local.yaml
 # 导入后凭据进入 macOS Keychain，普通 config.json 不包含凭据。
 
@@ -26,7 +26,6 @@ oss:
 
 credentials:
   redis_password: "CHANGE_ME_REDIS_PASSWORD"
-  workspace_key: "CHANGE_ME_SHARED_RANDOM_KEY" # 运行 codex-link keygen 生成，再安全复制到另一台
   access_key_id: "CHANGE_ME_OSS_ACCESS_KEY_ID"
   access_key_secret: "CHANGE_ME_OSS_ACCESS_KEY_SECRET"
   security_token: ""              # 使用 STS 时填写；到期需重新配置 / Optional STS token

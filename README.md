@@ -8,12 +8,12 @@ An encrypted message and file bridge for Codex sessions on two Macs. One lightwe
 
 ## What it does
 
-- Stable device IDs, customizable names, shared workspaces and session/conversation routing.
+- Automatic device identities, customizable names, first-contact pairing and session/conversation routing.
 - Redis Streams with a durable SQLite outbox, retries, duplicate suppression and delivery receipts.
 - Offline catch-up and local history shared by all windows under the same macOS user.
 - Task claiming with renewable leases and transactional completion replies.
 - Encrypted Aliyun OSS transfers, bounded-memory file processing and SHA-256 verification.
-- Keychain credentials, a private Unix socket, LaunchAgent management and a Codex skill.
+- Keychain credentials/device keys, mutual native pairing dialogs, a private Unix socket, LaunchAgent management and a Codex skill.
 - GitHub Release installation, source installation, updates, rollback and uninstall.
 
 ## Architecture
@@ -32,7 +32,7 @@ Unix socket -> Go daemon                   Unix socket -> Go daemon
 GitHub repository / Releases: source, skill and Mac binaries
 ```
 
-No inbound public port is required on either Mac. Redis carries encrypted message envelopes; OSS stores encrypted file frames. Redis key names, routing IDs, timing, sizes and OSS object paths remain visible to infrastructure operators. Paired workspace members share one group key and are mutually trusted; this is not per-device cryptographic identity or a multi-tenant authorization system.
+No inbound public port is required on either Mac. Redis carries signed discovery/pairing events and encrypted application messages; OSS stores encrypted file frames. Routing IDs, device names/public keys, timing, sizes and object paths remain visible. Each device generates Ed25519/X25519 keys automatically. First contact requires confirmation on both devices; pairwise encryption keys are derived automatically and never copied by users. Session aliases are not an access-control boundary.
 
 ## Install
 
@@ -69,7 +69,6 @@ Copy the template and edit it locally:
 ```sh
 cp config.example.yaml config.local.yaml
 chmod 600 config.local.yaml
-codex-link keygen  # Generate on one Mac; privately copy the key to the other.
 codex-link init --config "$PWD/config.local.yaml"
 codex-link doctor --files
 codex-link daemon start
@@ -77,7 +76,7 @@ codex-link status
 codex-link peers
 ```
 
-`config.local.yaml` is gitignored. Never commit or paste a filled configuration into a chat. Both Macs use the same `workspace`, `credentials.workspace_key`, OSS bucket and prefix, and different device names. Each Mac generates its own device ID. The generated key has 256 bits of randomness; do not substitute a human password.
+`config.local.yaml` is gitignored. Never commit or paste a filled configuration into a chat. Both Macs use the same `workspace`, OSS bucket and prefix, and different device names. Each Mac automatically generates its identity and saves private keys in Keychain. There is no `workspace_key` configuration.
 
 Template fields:
 
@@ -91,7 +90,6 @@ Template fields:
 | `oss.endpoint`, `oss.region` | HTTPS Aliyun regional endpoint; region is inferred for standard endpoints |
 | `oss.bucket`, `oss.prefix` | Private bucket and shared object prefix |
 | `credentials.redis_password` | Redis password |
-| `credentials.workspace_key` | Shared random pairing/encryption key, at least 32 characters |
 | `credentials.access_key_id`, `access_key_secret` | Prefix-restricted RAM credentials |
 | `credentials.security_token` | Optional STS token; manual renewal is required |
 | `max_file_bytes` | Default 1 GiB per file |
@@ -100,7 +98,24 @@ Template fields:
 
 Set OSS endpoint and bucket to empty strings to use messages only. See [infrastructure configuration](docs/infrastructure.md) for Redis ACLs and OSS policies. `doctor --files` makes a small upload/download/delete probe, not a production durability test.
 
-Initialization imports credentials into macOS Keychain (`io.jom.codex-link`, account = device ID). The persisted `config.json` contains no passwords or keys. Secure or delete the filled YAML after importing. Interactive `init` uses hidden secret prompts; `--secrets-env` is also available with a configuration file using `CODEX_LINK_REDIS_PASSWORD`, `CODEX_LINK_WORKSPACE_KEY`, `CODEX_LINK_OSS_ACCESS_KEY_ID`, `CODEX_LINK_OSS_ACCESS_KEY_SECRET`, and optional `CODEX_LINK_OSS_SECURITY_TOKEN`.
+Initialization imports credentials into macOS Keychain (`io.jom.codex-link`, account = device ID). The persisted `config.json` contains no passwords or keys. Secure or delete the filled YAML after importing. Interactive `init` uses hidden secret prompts; `--secrets-env` is also available with a configuration file using `CODEX_LINK_REDIS_PASSWORD`, `CODEX_LINK_OSS_ACCESS_KEY_ID`, `CODEX_LINK_OSS_ACCESS_KEY_SECRET`, and optional `CODEX_LINK_OSS_SECURITY_TOKEN`.
+
+## First-contact pairing: confirm on both Macs
+
+Send normally, e.g. `codex-link send --to office-mac --text "Hello"`. If the devices are not paired, the message remains queued and each Mac shows a native confirmation dialog. Compare the six-digit code shown on BOTH Macs, check the intended device name/ID, and click Confirm on both. The application pins the peer identity, derives the encryption keys, and automatically sends the queued message. Rejecting or confirming only one side does not release it.
+
+Adding a third Mac requires new pairwise confirmations; it does not inherit access to existing pairs. Requests expire after ten minutes; dialogs time out after two minutes. If a request expires or is rejected, deliberately initiate a new request. A reinstall that loses identity keys creates a new device ID and requires pairing again.
+
+For headless/accessibility workflows, set `pairing_headless: true` and use the explicit local commands after human confirmation:
+
+```sh
+codex-link pair request --to office-mac
+codex-link pair list
+codex-link pair accept REQUEST_ID --code 123456
+# or: codex-link pair reject REQUEST_ID --code 123456
+```
+
+Normal macOS use needs no CLI pairing step. First-contact file sends initiate pairing and return `pairing_pending`; retry the file command after confirmation. The skill handles that retry. Previously queued text/tasks send automatically.
 
 ## Send messages and cooperate
 
@@ -136,7 +151,7 @@ The installer places [the skill](skills/codex-link/SKILL.md) in `${CODEX_HOME:-~
 
 > Use codex-link to ask office-mac to check its Go installation, and send its verified result back.
 
-The daemon receives even when no chat is active. An active Codex session can wait for replies; an idle session is not automatically awakened. The skill keeps installation/configuration details, command syntax and the cooperation workflow together.
+The native pairing dialog can appear even when no chat is active. The daemon receives even when no chat is active. An active Codex session can wait for replies; an idle session is not automatically awakened. The skill keeps installation/configuration details, command syntax and the cooperation workflow together.
 
 ## Operate, upgrade and remove
 
@@ -158,7 +173,7 @@ Updates preserve state and keep the previous binary/skill. To roll back, stop th
 - Incoming storage, cursor advancement and receipt enqueueing share one SQLite transaction.
 - Transport is at least once, with duplicate suppression. Task side effects are not guaranteed exactly once.
 - Offline recovery is bounded by stream trimming, expiration, Redis persistence and OSS lifecycle rules. Configure Redis persistence/backups; never describe retention settings as an absolute no-loss guarantee.
-- Registry entries persist for offline name lookup. Heartbeats are every 30 seconds; `seen_at` older than 90 seconds indicates an offline peer. Duplicate names require explicit IDs.
+- Signed registry entries persist for discovery. Confirmed peer names/keys are pinned locally for offline name lookup. Heartbeats are every 30 seconds; `seen_at` older than 90 seconds indicates an offline peer. Duplicate names require explicit IDs.
 - STS refresh, automatic Codex wakeup, GUI, automatic directory extraction, cross-user inboxes and S3-compatible storage are not implemented in this release.
 - No cloud service credentials ship with the project. Live two-Mac validation still requires your infrastructure and credentials.
 
@@ -172,7 +187,7 @@ go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
 sh scripts/package.sh v0.1.0
 ```
 
-Tests cover encrypted envelopes, file truncation/tampering/limits, SQLite restart persistence, concurrent task claims, delivery receipts, two daemon task/result exchange and offline catch-up with an embedded Redis test server. OSS tests use a TLS HTTP fixture and signed SDK requests; this is not a substitute for live OSS permission validation. Production code uses pure-Go SQLite and builds with `CGO_ENABLED=0`.
+Tests cover automatic key agreement, mutual approval/rejection, new-device isolation, encrypted envelopes, file truncation/tampering/limits, SQLite restart persistence, concurrent task claims, delivery receipts, two daemon task/result exchange and offline catch-up with an embedded Redis test server. OSS tests use a TLS HTTP fixture and signed SDK requests; this is not a substitute for live OSS permission validation. Production code uses pure-Go SQLite and builds with `CGO_ENABLED=0`.
 
 GitHub Actions tests pushes/PRs; pushing a `v*` tag tests and publishes both Mac packages and checksums to Releases. See [architecture](docs/architecture.md), [verification](docs/verification.md), and [contributing](CONTRIBUTING.md).
 

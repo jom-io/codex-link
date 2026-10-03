@@ -16,10 +16,11 @@ import (
 )
 
 type Config struct {
-	DeviceID  string `json:"device_id" yaml:"device_id"`
-	Name      string `json:"name" yaml:"name"`
-	Workspace string `json:"workspace" yaml:"workspace"`
-	Redis     struct {
+	PairingHeadless bool   `json:"pairing_headless,omitempty" yaml:"pairing_headless,omitempty"`
+	DeviceID        string `json:"device_id" yaml:"device_id"`
+	Name            string `json:"name" yaml:"name"`
+	Workspace       string `json:"workspace" yaml:"workspace"`
+	Redis           struct {
 		Address       string `json:"address" yaml:"address"`
 		Username      string `json:"username,omitempty" yaml:"username,omitempty"`
 		DB            int    `json:"db" yaml:"db"`
@@ -38,7 +39,8 @@ type Config struct {
 }
 type Secrets struct {
 	RedisPassword   string `json:"redis_password" yaml:"redis_password"`
-	WorkspaceKey    string `json:"workspace_key" yaml:"workspace_key"`
+	SigningPrivate  string `json:"signing_private" yaml:"-"`
+	ExchangePrivate string `json:"exchange_private" yaml:"-"`
 	AccessKeyID     string `json:"access_key_id" yaml:"access_key_id"`
 	AccessKeySecret string `json:"access_key_secret" yaml:"access_key_secret"`
 	SecurityToken   string `json:"security_token,omitempty" yaml:"security_token,omitempty"`
@@ -132,8 +134,12 @@ func SaveConfig(home string, c Config) error {
 	return os.Rename(tmp, ConfigPath(home))
 }
 func SaveSecrets(c Config, s Secrets) error {
-	if len(s.WorkspaceKey) < 32 {
-		return errors.New("workspace key must have at least 32 characters; use codex-link keygen")
+	identity, err := EnsureIdentity(&s)
+	if err != nil {
+		return err
+	}
+	if identity.ID() != c.DeviceID {
+		return errors.New("device ID does not match its identity")
 	}
 	b, e := json.Marshal(s)
 	if e != nil {
@@ -151,8 +157,12 @@ func LoadSecrets(c Config) (Secrets, error) {
 	if e != nil {
 		return s, e
 	}
-	if len(s.WorkspaceKey) < 32 {
-		return s, errors.New("invalid workspace key")
+	identity, err := EnsureIdentity(&s)
+	if err != nil {
+		return s, err
+	}
+	if identity.ID() != c.DeviceID {
+		return s, errors.New("device identity mismatch")
 	}
 	return s, nil
 }

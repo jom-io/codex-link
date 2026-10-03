@@ -4,7 +4,7 @@
 
 Use a password-protected standalone Redis endpoint with TLS and persistence. The application uses Redis Streams, hashes and a Lua publish script. Redis 6.2+ is recommended. Configure AOF/RDB/backups according to your durability requirements and avoid eviction policies that silently remove inboxes.
 
-Restrict the application user to `~cl:v1:*` and the required command families. A starting ACL command allowlist is:
+Restrict the application user to `~cl:v2:*` and the required command families. A starting ACL command allowlist is:
 
 ```text
 +ping +hello +auth +select +client +xadd +xread +xlen +hset +hgetall +get +set +expire +exists +eval +evalsha +script
@@ -45,4 +45,4 @@ STS needs all three values: AccessKey ID, AccessKey secret and security token. T
 
 ## Local secrets
 
-`config.local.yaml` is a bootstrap file with plaintext credentials; keep it at 0600, never commit it, and remove/protect it after import. Keychain is the runtime secret store. Ordinary runtime config and database are per-user files. Workspace key rotation requires coordinated reconfiguration of both devices; old ciphertext cannot be decrypted with a new key. Do not rotate silently while messages or files remain pending.
+`config.local.yaml` is a bootstrap file with plaintext credentials; keep it at 0600, never commit it, and remove/protect it after import. Keychain is the runtime secret store. Ordinary runtime config and database are per-user files. Device private keys are created automatically in Keychain and must not be copied into the YAML. Each new pair is confirmed locally on both devices. Names are discoverable metadata; possession of Redis credentials alone does not establish peer trust. Losing identity keys changes the device ID and requires pairing again.

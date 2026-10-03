@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
 
 type Daemon struct {
+	pairMu    sync.Mutex
 	Config    Config
 	Home      string
 	Store     *Store
@@ -71,6 +73,16 @@ func (d *Daemon) receive(ctx context.Context) {
 				continue
 			}
 			var receipt *Message
+			if strings.HasPrefix(m.Kind, "pair_") {
+				if err := d.receivePair(ctx, m); err != nil {
+					log.Print("rejected pairing event")
+				}
+				if err := d.Store.Accept(ctx, &m, r.ID, nil); err != nil {
+					break
+				}
+				d.notify()
+				continue
+			}
 			if m.Kind != "receipt" {
 				v := d.base(m.From, "receipt")
 				v.ReplyTo = m.ID
@@ -112,6 +124,9 @@ func (d *Daemon) send(ctx context.Context) {
 				c, cancel := context.WithTimeout(ctx, 10*time.Second)
 				e = d.Transport.Publish(c, r.Message)
 				cancel()
+				if errors.Is(e, ErrNotPaired) {
+					continue
+				}
 				if e != nil {
 					d.setConnected(false)
 					break
@@ -177,14 +192,16 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 		return e
 	}
 	defer transport.Close()
+	transport.store = store
 	files, _ := NewFiles(c, s, home)
 	d := &Daemon{Config: c, Home: home, Store: store, Transport: transport, Files: files, changed: make(chan struct{})}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); d.receive(runCtx) }()
 	go func() { defer wg.Done(); d.send(runCtx) }()
+	go func() { defer wg.Done(); d.prompts(runCtx) }()
 	server := &http.Server{Handler: d.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
@@ -208,6 +225,7 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
+	Code         string `json:"code,omitempty"`
 	To           string `json:"to,omitempty"`
 	Text         string `json:"text,omitempty"`
 	Kind         string `json:"kind,omitempty"`
@@ -260,6 +278,18 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		return d.Transport.Peers(c)
+	case "/v1/pair/list":
+		return d.Store.Pairs(ctx)
+	case "/v1/pair/request":
+		c, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		to, e := d.Transport.Resolve(c, a.To)
+		if e != nil {
+			return nil, e
+		}
+		return d.ensurePair(c, to)
+	case "/v1/pair/accept", "/v1/pair/reject":
+		return d.decidePair(ctx, a.ID, a.Code, path == "/v1/pair/accept")
 	case "/v1/send", "/v1/file/send":
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		to, e := d.Transport.Resolve(c, a.To)
@@ -274,7 +304,7 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		if path == "/v1/file/send" {
 			kind = "file"
 		}
-		if kind == "receipt" {
+		if kind == "receipt" || strings.HasPrefix(kind, "pair_") {
 			return nil, errors.New("receipts are internal")
 		}
 		m := d.base(to, kind)
@@ -283,12 +313,26 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		m.ToSession = a.ToSession
 		m.Conversation = a.Conversation
 		m.ReplyTo = a.ReplyTo
+		pairCtx, pairCancel := context.WithTimeout(ctx, 10*time.Second)
+		pair, e := d.ensurePair(pairCtx, to)
+		pairCancel()
+		if e != nil {
+			return nil, e
+		}
 		if kind == "file" {
+			if !pair.Ready() {
+				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
+			}
 			if d.Files == nil {
 				return nil, errors.New("OSS is not configured")
 			}
 			d.fileMu.Lock()
-			m.File, e = d.Files.Upload(ctx, a.Path, to)
+			key, keyErr := d.Transport.PairKey(ctx, to)
+			if keyErr != nil {
+				d.fileMu.Unlock()
+				return nil, keyErr
+			}
+			m.File, e = d.Files.Upload(ctx, a.Path, to, key)
 			d.fileMu.Unlock()
 			if e != nil {
 				return nil, e
@@ -298,7 +342,11 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			return nil, e
 		}
 		d.notify()
-		return map[string]any{"id": m.ID, "status": "pending", "message": m}, nil
+		status := "pending"
+		if !pair.Ready() {
+			status = "pairing_pending"
+		}
+		return map[string]any{"id": m.ID, "status": status, "message": m, "pairing": pair}, nil
 	case "/v1/inbox", "/v1/history":
 		return d.Store.List(ctx, a.After, a.Limit, path == "/v1/history", a.Session, a.Conversation)
 	case "/v1/wait":
@@ -342,7 +390,12 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			return nil, errors.New("only received files can be fetched")
 		}
 		d.fileMu.Lock()
-		p, e := d.Files.Download(ctx, r.Message)
+		key, keyErr := d.Transport.PairKey(ctx, r.Message.From)
+		if keyErr != nil {
+			d.fileMu.Unlock()
+			return nil, keyErr
+		}
+		p, e := d.Files.Download(ctx, r.Message, key)
 		d.fileMu.Unlock()
 		if e != nil {
 			return nil, e

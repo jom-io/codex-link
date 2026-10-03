@@ -8,12 +8,12 @@
 
 ## 能力
 
-- 自动生成稳定设备 ID，支持自定义设备名称、协作空间、会话和任务路由。
+- 自动生成设备身份，支持自定义名称、首次联系确认配对、协作空间和会话路由。
 - Redis Streams 消息传输，SQLite 发件箱、重试、去重和送达回执。
 - 离线补收，本机多个聊天窗口共享历史。
 - 任务领取、可续期租约、原子保存结果并发送回复。
 - OSS 加密文件上传下载、受控内存处理、SHA-256 校验。
-- macOS Keychain 凭据存储、Unix socket 本地访问和 LaunchAgent 常驻启动。
+- macOS Keychain 凭据及设备私钥存储、双端原生配对确认、Unix socket 本地访问和 LaunchAgent 常驻启动。
 - Codex skill、GitHub Release/源码安装、升级、回退及卸载。
 
 ## 架构
@@ -32,7 +32,7 @@ Unix socket → Go 常驻服务              Unix socket → Go 常驻服务
 GitHub 仓库 / Releases：源码、skill、Mac 安装包
 ```
 
-两端不需要开放公网入站端口。Redis 中的消息正文及 OSS 文件内容均加密；基础设施仍可见设备路由、对象路径、消息时间和大小等元数据。协作空间成员共享密钥并互相信任；目前没有每设备独立签名身份或多租户权限体系。
+两端不需要开放公网入站端口。Redis 保存签名的设备发现/配对事件和加密的业务消息，OSS 保存加密文件。基础设施仍可见设备名、公钥、路由、对象路径、时间和大小。每台设备自动生成 Ed25519/X25519 身份；首次联系时两端确认，应用自动派生每对设备独立的加密密钥，无需填写或复制密钥。会话别名不是窗口间权限边界。
 
 ## 安装
 
@@ -69,7 +69,6 @@ sh scripts/install.sh --source "$PWD"
 ```sh
 cp config.example.yaml config.local.yaml
 chmod 600 config.local.yaml
-codex-link keygen  # 在一台生成，通过安全方式复制到另一台
 codex-link init --config "$PWD/config.local.yaml"
 codex-link doctor --files
 codex-link daemon start
@@ -77,7 +76,7 @@ codex-link status
 codex-link peers
 ```
 
-`config.local.yaml` 已加入 Git 忽略规则。两台机器的 `workspace`、`credentials.workspace_key`、OSS bucket/prefix 相同，设备名不同。设备 ID 由各端独立生成。`keygen` 生成具有 256 位随机性的密钥，不应替换为易猜密码。
+`config.local.yaml` 已加入 Git 忽略规则。两台机器的 `workspace`、OSS bucket/prefix 相同，设备名不同。设备身份自动生成，私钥保存在 Keychain；不再需要配置 `workspace_key`。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -89,7 +88,6 @@ codex-link peers
 | `oss.endpoint`、`oss.region` | 阿里云 HTTPS 区域 endpoint；标准域名可自动推导 region |
 | `oss.bucket`、`oss.prefix` | 私有 bucket 和共用对象路径前缀 |
 | `credentials.redis_password` | Redis 密码 |
-| `credentials.workspace_key` | 共用随机协作密钥，至少 32 个字符 |
 | `credentials.access_key_id`、`access_key_secret` | 限定 prefix 权限的 RAM 凭据 |
 | `credentials.security_token` | 可选 STS token；到期前需手动重新配置 |
 | `max_file_bytes` | 默认单文件最大 1 GiB |
@@ -99,6 +97,23 @@ codex-link peers
 只使用消息时，将 OSS endpoint 和 bucket 改为空字符串。Redis ACL 和 OSS 权限说明见[基础设施配置](docs/infrastructure.md)。`doctor --files` 执行小文件加密上传、下载和删除探测，不代表生产持久性验证。
 
 初始化将凭据导入 Keychain（service 为 `io.jom.codex-link`，account 为设备 ID）；应用保存的 `config.json` 不包含密码或密钥。导入后请保护或删除填写后的 YAML。交互式 `init` 隐藏密码输入，也支持 `--secrets-env` 从环境变量读取凭据，变量名称见英文 README。
+
+## 首次联系：两边点击确认即可
+
+直接发送，例如 `codex-link send --to office-mac --text "你好"`。尚未配对时，消息先保留在发件箱，两台 Mac 分别弹出确认窗口。核对两端显示的六位校验码相同、设备名称和 ID 正确，再点击确认。应用固定对端身份并自动生成加密通道，之前排队的消息随后自动发送。
+
+只确认一端或选择拒绝，不会发送业务消息。增加第三台设备时，分别确认新的设备配对，不能直接访问已有设备间的通道。请求十分钟过期，弹窗两分钟超时；拒绝或过期后需要主动重新发起。重装丢失身份密钥会产生新设备 ID，需重新配对。
+
+无图形会话或需要显式命令时，可设置 `pairing_headless: true`，在用户确认后执行：
+
+```sh
+codex-link pair request --to office-mac
+codex-link pair list
+codex-link pair accept REQUEST_ID --code 123456
+# 拒绝：codex-link pair reject REQUEST_ID --code 123456
+```
+
+普通 Mac 使用无需手动执行配对命令。首次发送文件会先发起配对并返回 `pairing_pending`，确认后重试文件命令，skill 会负责该步骤；排队的文字/任务会自动发送。
 
 ## 消息与任务协作
 
@@ -138,7 +153,7 @@ codex-link file fetch FILE_MESSAGE_ID
 
 > 用 codex-link 让 office-mac 检查 Go 是否安装，并把验证结果返回。
 
-后台服务持续接收，活跃窗口通过等待或读取收件箱获得消息；空闲窗口不会自动启动任务。skill 包含安装配置引导、命令说明、领取任务、发送进度和完成回复流程。
+首次配对弹窗不依赖聊天窗口活跃状态。后台服务持续接收，活跃窗口通过等待或读取收件箱获得消息；空闲窗口不会自动启动任务。skill 包含安装配置引导、命令说明、领取任务、发送进度和完成回复流程。
 
 ## 运维、升级、回退和卸载
 
@@ -160,7 +175,7 @@ codex-link daemon start
 - 接收消息、保存游标和生成回执在一个 SQLite 事务中完成。
 - 传输支持至少一次投递及去重，不承诺业务操作恰好执行一次。
 - 离线补收受消息条数裁剪、过期、Redis 持久化和 OSS 生命周期限制，需自行配置 Redis 持久化及备份。
-- 设备注册保留以支持离线名称查询；心跳每 30 秒一次，超过 90 秒未更新可视为离线。重名时使用设备 ID。
+- 设备发现记录带签名，已确认的设备名称和公钥保存在本机以支持离线查询；心跳每 30 秒一次，超过 90 秒未更新可视为离线。重名时使用设备 ID。
 - 尚未实现 STS 自动续期、空闲 Codex 自动唤醒、图形界面、自动目录解压、跨 macOS 用户共享或 S3 服务。
 - 项目不包含云服务凭据；真实公网和双 Mac 联调需配置实际服务。
 
@@ -174,7 +189,7 @@ go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
 sh scripts/package.sh v0.1.0
 ```
 
-测试覆盖消息加密认证、文件截断/篡改/限额、SQLite 持久化、并发领取、送达回执、两个后台实例协作和离线补收。Redis 使用内嵌测试服务；OSS 使用 TLS HTTP 模拟服务和 SDK 签名请求，不替代真实 OSS 权限验证。生产程序使用纯 Go SQLite，支持 `CGO_ENABLED=0` 编译。
+测试覆盖自动密钥协商、双端确认/拒绝、新设备隔离、消息加密认证、文件截断/篡改/限额、SQLite 持久化、并发领取、送达回执、两个后台实例协作和离线补收。Redis 使用内嵌测试服务；OSS 使用 TLS HTTP 模拟服务和 SDK 签名请求，不替代真实 OSS 权限验证。生产程序使用纯 Go SQLite，支持 `CGO_ENABLED=0` 编译。
 
 GitHub Actions 对推送和 PR 执行测试；推送 `v*` 标签后测试并发布两种 Mac 包和校验清单。详见[架构说明](docs/architecture.md)、[验证记录](docs/verification.md)和[贡献指南](CONTRIBUTING.md)。
 

@@ -47,7 +47,7 @@ func TestOSSUploadDownloadAndTamper(t *testing.T) {
 	c.OSS.Endpoint = server.URL
 	c.OSS.Bucket = "test-bucket"
 	c.OSS.Region = "cn-hangzhou"
-	s := Secrets{WorkspaceKey: testKey, AccessKeyID: "test-id", AccessKeySecret: "test-secret"}
+	s := Secrets{AccessKeyID: "test-id", AccessKeySecret: "test-secret"}
 	client, e := oss.New(server.URL, s.AccessKeyID, s.AccessKeySecret, oss.UseCname(true), oss.HTTPClient(server.Client()), oss.AuthVersion(oss.AuthV4), oss.Region(c.OSS.Region))
 	if e != nil {
 		t.Fatal(e)
@@ -61,7 +61,7 @@ func TestOSSUploadDownloadAndTamper(t *testing.T) {
 	f := &Files{bucket, c, s, home, "codex-link/" + hex.EncodeToString(h[:8]) + "/"}
 	source := filepath.Join(home, "source.txt")
 	os.WriteFile(source, []byte("private file payload"), 0600)
-	ref, e := f.Upload(context.Background(), source, c.DeviceID)
+	ref, e := f.Upload(context.Background(), source, c.DeviceID, testKey)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -73,7 +73,7 @@ func TestOSSUploadDownloadAndTamper(t *testing.T) {
 	}
 	mu.Unlock()
 	m := Message{ID: NewID(), File: ref}
-	dest, e := f.Download(context.Background(), m)
+	dest, e := f.Download(context.Background(), m, testKey)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -88,14 +88,14 @@ func TestOSSUploadDownloadAndTamper(t *testing.T) {
 		objects[k] = b
 	}
 	mu.Unlock()
-	if _, e = f.Download(context.Background(), m); e == nil {
+	if _, e = f.Download(context.Background(), m, testKey); e == nil {
 		t.Fatal("tampered OSS file accepted")
 	}
 	if _, e = os.Stat(dest); !os.IsNotExist(e) {
 		t.Fatal("partial file published")
 	}
 	ref.Object = "../../outside"
-	if _, e = f.Download(context.Background(), m); e == nil {
+	if _, e = f.Download(context.Background(), m, testKey); e == nil {
 		t.Fatal("foreign object accepted")
 	}
 }

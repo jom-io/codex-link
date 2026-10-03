@@ -3,6 +3,7 @@
 ```sh
 codex-link status --json
 codex-link peers --json
+codex-link pair list --json
 codex-link send --to office-mac --kind task --session requester --conversation setup --text "Check whether Go is installed and return the version. Do not install anything."
 codex-link inbox --after 0 --session worker --conversation setup --json
 codex-link task claim TASK_ID --session worker --lease 900
@@ -24,3 +25,5 @@ Task leases default to 15 minutes. Claim again with the same session to renew. C
 Messages have `id`, `protocol`, `from`, `to`, `kind`, optional conversation/session/reply fields, and timestamp. File messages also have encrypted OSS object metadata. Receipts are internal and hidden from inbox/history. Use `get` to inspect outgoing delivery status.
 
 An online peer has a recent `seen_at` (heartbeat every 30 seconds; treat older than 90 seconds as offline). The registry retains previously registered devices so their names can still be resolved offline. Duplicate names require an explicit device ID.
+
+First-contact text/tasks queue while both native dialogs await confirmation. `pair/list` returns public peer information, request ID, code and local/remote approval state. `pair accept ID --code CODE` and `pair reject ID --code CODE` are local explicit decisions, not remote commands. Never accept without human authorization. Pairing events are hidden from ordinary inbox/history. First file send must be retried after pairing; the initial attempt uploads no data.
