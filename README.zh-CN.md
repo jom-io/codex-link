@@ -4,7 +4,7 @@
 
 为两台 Mac 上的 Codex 提供加密消息与文件通信。每个 macOS 用户运行一个 Go 常驻服务，本机所有 Codex 聊天窗口通过 CLI 共享收件箱、任务历史和文件缓存。
 
-**当前版本：v0.1.1。** 版本改动见[更新记录](CHANGELOG.md)。 应用负责通信与文件传输；收到任务不会自动执行命令，也不会自动唤醒空闲的 Codex 聊天窗口。文件服务首先支持阿里云 OSS。
+**当前版本：v0.1.2。** 版本改动见[更新记录](CHANGELOG.md)。 应用负责通信与文件传输；收到任务不会自动执行命令，也不会自动唤醒空闲的 Codex 聊天窗口。文件服务首先支持阿里云 OSS。
 
 ## 能力
 
@@ -43,8 +43,8 @@ GitHub 仓库 / Releases：源码、skill、Mac 安装包
 下载并检查指定版本的安装脚本后运行：
 
 ```sh
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -58,7 +58,7 @@ codex-link version
 ```sh
 git clone https://github.com/jom-io/codex-link.git
 cd codex-link
-git checkout v0.1.1
+git checkout v0.1.2
 sh scripts/install.sh --source "$PWD"
 ```
 
@@ -125,6 +125,7 @@ codex-link send --to office-mac --kind task --session requester --conversation s
 codex-link inbox --after 0 --session worker --conversation setup
 codex-link task list --session worker-home-window-a --conversation setup --json
 codex-link task claim TASK_ID --session worker-home-window-a --lease 900
+codex-link send --to office-mac --kind progress --session worker-home-window-a --to-session requester --conversation setup --reply-to TASK_ID --text "已认领，开始处理；执行期间我会继续检查新消息。"
 codex-link task complete TASK_ID --session worker-home-window-a --text "Go 版本已验证：……"
 codex-link wait --after 12 --session requester --conversation setup --timeout 30
 codex-link history --after 0
@@ -137,7 +138,7 @@ codex-link get MESSAGE_ID
 
 发送时 `--session` 表示发送窗口别名，`--to-session` 指定对端窗口别名；接收时 `--session` 包含对应窗口消息和公共消息。窗口别名由调用者提供，不依赖 Codex 内部聊天 ID。筛选只用于路由，不是窗口间的权限边界。
 
-`pending` 为本地排队，`sent` 为 Redis 已接收，`delivered` 为对端已保存，均不等于任务已完成。任务内容不自动赋予执行权限，Codex 在用户授权范围内执行。`task list` 显示完整任务 ID、状态、认领者和租约到期时间。认领要使用任务自身的 `message.id`，不要用 `reply_to`。每个并行工作的 Codex 窗口使用不同且稳定的 `--session` 别名；同名别名会被视为同一个租约持有者。租约默认 15 分钟，持有者可以续租，过期后其他窗口可接手，因此安装等操作应先检查实际状态，避免重复执行。
+`pending` 为本地排队，`sent` 为 Redis 已接收，`delivered` 为对端已保存，均不等于任务已完成。任务内容不自动赋予执行权限，Codex 在用户授权范围内执行。`task list` 显示完整任务 ID、状态、认领者和租约到期时间。认领要使用任务自身的 `message.id`，不要用 `reply_to`。每个并行工作的 Codex 窗口使用不同且稳定的 `--session` 别名；同名别名会被视为同一个租约持有者。认领后立即发进度确认。长命令用异步方式启动，在检查命令进程期间轮询 `task list` 和收件箱；有新消息就单独确认、转交另一个空闲窗口处理，或说明它会排队等候。租约默认 15 分钟，持有者可以续租，过期后其他窗口可接手，因此安装等操作应先检查实际状态，避免重复执行。
 
 ## 文件传输
 
@@ -156,7 +157,7 @@ codex-link file fetch FILE_MESSAGE_ID
 
 > 用 codex-link 让 office-mac 检查 Go 是否安装，并把验证结果返回。
 
-首次配对弹窗不依赖聊天窗口活跃状态。后台服务持续接收，活跃窗口通过等待或读取收件箱获得消息；空闲窗口不会自动启动任务。skill 包含安装配置引导、命令说明、领取任务、发送进度和完成回复流程。
+首次配对弹窗不依赖聊天窗口活跃状态。后台服务在本机执行任务期间也持续接收并保存消息；Codex 需要在异步步骤之间轮询收件箱。空闲窗口不会自动启动任务。认领后立即回报，并在长步骤期间定时发送进度，让对端知道任务仍在处理。skill 包含安装配置引导、命令说明、领取任务、发送进度和完成回复流程。
 
 ## 运维、升级、回退和卸载
 
@@ -164,9 +165,9 @@ codex-link file fetch FILE_MESSAGE_ID
 codex-link daemon stop
 codex-link configure --config /absolute/path/config.local.yaml
 codex-link daemon start
-# 升级到 v0.1.1：安装器会备份旧版并自动重启正在运行的服务
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
+# 升级到 v0.1.2：安装器会备份旧版并自动重启正在运行的服务
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
 # 卸载：sh scripts/uninstall.sh
 ```
 
@@ -191,7 +192,7 @@ go test ./...
 go test -race ./...   # race 运行时需要可用的 C 编译工具链
 go vet ./...
 go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
-sh scripts/package.sh v0.1.1
+sh scripts/package.sh v0.1.2
 ```
 
 测试覆盖自动密钥协商、双端确认/拒绝、新设备隔离、消息加密认证、文件截断/篡改/限额、SQLite 持久化、并发领取、送达回执、两个后台实例协作和离线补收。Redis 使用内嵌测试服务；OSS 使用 TLS HTTP 模拟服务和 SDK 签名请求，不替代真实 OSS 权限验证。生产程序使用纯 Go SQLite，支持 `CGO_ENABLED=0` 编译。

@@ -8,6 +8,7 @@ codex-link send --to office-mac --kind task --session requester --conversation s
 codex-link inbox --after 0 --session worker --conversation setup --json
 codex-link task list --session worker --conversation setup --json
 codex-link task claim TASK_ID --session worker-home-window-a --lease 900
+codex-link send --to office-mac --kind progress --session worker-home-window-a --to-session requester --conversation setup --reply-to TASK_ID --text "Claimed; starting work. I will keep checking messages while this runs."
 codex-link send --to home-mac --kind progress --session worker --conversation setup --reply-to TASK_ID --text "Environment inspection in progress"
 codex-link task complete TASK_ID --session worker --text "Go version verified: ..."
 codex-link wait --after 12 --session requester --conversation setup --timeout 30 --json

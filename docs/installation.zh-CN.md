@@ -5,8 +5,8 @@
 ## 1. 下载并安装应用与 skill
 
 ```sh
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -19,7 +19,7 @@ codex-link version
 
 ```sh
 mkdir -p "$HOME/Library/Application Support/codex-link"
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 ```
 
@@ -73,7 +73,7 @@ chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 
 文件接收返回可供本机各窗口访问的绝对路径。首次文件发送触发配对时没有上传文件，确认后需要重试该文件命令。目录由用户明确选择并打包；附件不会自动执行。
 
-收到执行任务后，先运行 `task list --session ALIAS --conversation setup` 找到该任务，复制完整 `message.id`（不要拿 `reply_to` 的父消息 ID）。每个并行工作的 Codex 窗口使用不同且稳定的 `--session` 别名；同名别名会被视为同一租约持有者。先确认用户授权，再 `task claim TASK_MESSAGE_ID --session ALIAS`，执行并验证，最后 `task complete TASK_MESSAGE_ID --session ALIAS --text RESULT`。认领报错会指出任务不存在、已经完成或由哪个 session 持有以及租约时间。对端送达回执不等于任务完成。
+执行期间消息仍会由常驻服务接收并存入队列；“delivered”表示本机服务已保存，不代表 Codex 已读取。长时间命令要异步启动，并在轮询命令进程期间定时检查 `task list` 和 `inbox`。收到执行任务后，先运行 `task list --session ALIAS --conversation setup` 找到该任务，复制完整 `message.id`（不要拿 `reply_to` 的父消息 ID）。每个并行工作的 Codex 窗口使用不同且稳定的 `--session` 别名；同名别名会被视为同一租约持有者。先确认用户授权，再 `task claim TASK_MESSAGE_ID --session ALIAS`，立即向发送方回报已认领；执行期间每隔约一分钟或在阶段完成时发送进度。收到独立的新任务时交由另一个空闲窗口使用独立 session 认领；如果没有空闲窗口，先确认已收件并说明排队情况。最后 `task complete TASK_MESSAGE_ID --session ALIAS --text RESULT`。认领报错会指出任务不存在、已经完成或由哪个 session 持有以及租约时间。对端送达回执不等于任务完成。
 
 ## 排查
 
