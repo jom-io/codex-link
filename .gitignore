@@ -1,0 +1,12 @@
+/dist/
+/work/
+*.db
+*.db-shm
+*.db-wal
+config.local.json
+.env
+.DS_Store
+/codex-link
+
+config.local.yaml
+config.local.yml

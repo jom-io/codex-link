@@ -1,0 +1,65 @@
+modernc.org/sqlite v1.39.1
+
+AUTHORS
+
+# This file lists authors for copyright purposes.  This file is distinct from
+# the CONTRIBUTORS files.  See the latter for an explanation.
+#
+# Names should be added to this file as:
+#     Name or Organization <email address>
+#
+# The email address is not required for organizations.
+#
+# Please keep the list sorted.
+
+Angus Dippenaar <angusdippenaar@gmail.com>
+Artyom Pervukhin <github@artyom.dev>
+Dan Kortschak <dan@kortschak.io>
+Dan Peterson <danp@danp.net>
+David Walton <david@davidwalton.com>
+Davsk Ltd Co <skinner.david@gmail.com>
+FerretDB Inc.
+Harald Albrecht <thediveo@gmx.eu>
+Jaap Aarts <jaap.aarts1@gmail.com>
+Jan Mercl <0xjnml@gmail.com>
+Josh Bleecher Snyder <josharian@gmail.com>
+Josh Klein <josh.klein@outlook.com>
+Logan Snow <logansnow@protonmail.com>
+Michael Hoffmann <mhoffm@posteo.de>
+Michael Rykov <mrykov@gmail.com>
+Morgan Bazalgette <morgan@howl.moe>
+Ross Light <ross@zombiezen.com>
+Saed SayedAhmed <saadmtsa@gmail.com>
+Steffen Butzer <steffen(dot)butzer@outlook.com>
+Toni Spets <toni.spets@beeper.com>
+W. Michael Petullo <mike@flyn.org>
+
+
+LICENSE
+
+Copyright (c) 2017 The Sqlite Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors
+may be used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
