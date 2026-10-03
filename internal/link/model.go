@@ -19,6 +19,7 @@ type FileRef struct {
 	SHA256 string `json:"sha256"`
 }
 type Message struct {
+	Activity     *Activity  `json:"activity,omitempty"`
 	ID           string     `json:"id"`
 	Protocol     int        `json:"protocol"`
 	From         string     `json:"from"`

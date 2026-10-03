@@ -4,7 +4,7 @@
 
 为两台 Mac 上的 Codex 提供加密消息与文件通信。每个 macOS 用户运行一个 Go 常驻服务，本机所有 Codex 聊天窗口通过 CLI 共享收件箱、任务历史和文件缓存。
 
-**当前版本：v0.1.2。** 版本改动见[更新记录](CHANGELOG.md)。 应用负责通信与文件传输；收到任务不会自动执行命令，也不会自动唤醒空闲的 Codex 聊天窗口。文件服务首先支持阿里云 OSS。
+**当前版本：v0.1.3。** 版本改动见[更新记录](CHANGELOG.md)。 应用负责通信与文件传输；收到任务不会自动执行命令，也不会自动唤醒空闲的 Codex 聊天窗口。文件服务首先支持阿里云 OSS。
 
 ## 能力
 
@@ -43,8 +43,8 @@ GitHub 仓库 / Releases：源码、skill、Mac 安装包
 下载并检查指定版本的安装脚本后运行：
 
 ```sh
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -58,7 +58,7 @@ codex-link version
 ```sh
 git clone https://github.com/jom-io/codex-link.git
 cd codex-link
-git checkout v0.1.2
+git checkout v0.1.3
 sh scripts/install.sh --source "$PWD"
 ```
 
@@ -165,9 +165,9 @@ codex-link file fetch FILE_MESSAGE_ID
 codex-link daemon stop
 codex-link configure --config /absolute/path/config.local.yaml
 codex-link daemon start
-# 升级到 v0.1.2：安装器会备份旧版并自动重启正在运行的服务
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
+# 升级到 v0.1.3：安装器会备份旧版并自动重启正在运行的服务
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
 # 卸载：sh scripts/uninstall.sh
 ```
 
@@ -192,7 +192,7 @@ go test ./...
 go test -race ./...   # race 运行时需要可用的 C 编译工具链
 go vet ./...
 go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
-sh scripts/package.sh v0.1.2
+sh scripts/package.sh v0.1.3
 ```
 
 测试覆盖自动密钥协商、双端确认/拒绝、新设备隔离、消息加密认证、文件截断/篡改/限额、SQLite 持久化、并发领取、送达回执、两个后台实例协作和离线补收。Redis 使用内嵌测试服务；OSS 使用 TLS HTTP 模拟服务和 SDK 签名请求，不替代真实 OSS 权限验证。生产程序使用纯 Go SQLite，支持 `CGO_ENABLED=0` 编译。
@@ -202,3 +202,5 @@ GitHub Actions 对推送和 PR 执行测试；推送 `v*` 标签后测试并发�
 ## 开源协议
 
 MIT，版权归属 2026 jom-io。依赖保留各自协议，见[第三方声明](THIRD_PARTY_NOTICES.md)。
+
+窗口心跳：每个窗口运行一次 `worker new`，使用返回的 session 认领任务；活跃轮询期间每分钟调用 `worker pulse TASK_ID --session SESSION --stage "正在构建"`。通过 `workers`、`task status TASK_ID`、`peers` 查看窗口和服务状态。pulse 不会续租；90 秒未上报显示 stale，180 秒显示 unresponsive，不能据此认定进程已停止或重复执行。Redis 断线时缓存状态待确认。双方升级后才支持完整查询。

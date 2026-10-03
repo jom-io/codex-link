@@ -227,15 +227,28 @@ func TestTwoDaemonMutualPairingTaskAndRestart(t *testing.T) {
 		stopB()
 		t.Fatal(e)
 	}
-	raw, e = Call(ctx, ha, "wait", APIRequest{Timeout: 10, Session: "requester", Conversation: "setup"})
-	if e != nil {
-		stopB()
-		t.Fatal(e)
+	var after int64
+	foundResult := false
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !foundResult {
+		raw, e = Call(ctx, ha, "wait", APIRequest{After: after, Timeout: 2, Session: "requester", Conversation: "setup"})
+		if e != nil {
+			stopB()
+			t.Fatal(e)
+		}
+		json.Unmarshal(raw, &records)
+		for _, r := range records {
+			if r.Seq > after {
+				after = r.Seq
+			}
+			if r.Message.Kind == "result" {
+				foundResult = true
+			}
+		}
 	}
-	json.Unmarshal(raw, &records)
-	if len(records) != 1 || records[0].Message.Kind != "result" {
+	if !foundResult {
 		stopB()
-		t.Fatal("result not returned", string(raw))
+		t.Fatal("result not returned")
 	}
 	raw, _ = Call(ctx, hb, "status", APIRequest{})
 	var status struct {

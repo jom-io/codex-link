@@ -5,8 +5,8 @@
 ## 1. 下载并安装应用与 skill
 
 ```sh
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -19,7 +19,7 @@ codex-link version
 
 ```sh
 mkdir -p "$HOME/Library/Application Support/codex-link"
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 ```
 

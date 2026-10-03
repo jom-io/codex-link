@@ -4,14 +4,14 @@ Repository: https://github.com/jom-io/codex-link
 
 ## Published release
 
-Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it downloads the matching Mac release, verifies the published SHA-256, and installs the CLI to `~/.local/bin` and skill to `${CODEX_HOME:-~/.codex}/skills/codex-link`. Set `CODEX_LINK_VERSION=v0.1.2` to pin a release. Set `CODEX_LINK_INSTALL_REF=v0.1.2` when using this skill's installer wrapper. Checksums detect download corruption; they are not a separate publisher signature. macOS binaries are currently unsigned and not notarized.
+Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it downloads the matching Mac release, verifies the published SHA-256, and installs the CLI to `~/.local/bin` and skill to `${CODEX_HOME:-~/.codex}/skills/codex-link`. Set `CODEX_LINK_VERSION=v0.1.3` to pin a release. Set `CODEX_LINK_INSTALL_REF=v0.1.3` when using this skill's installer wrapper. Checksums detect download corruption; they are not a separate publisher signature. macOS binaries are currently unsigned and not notarized.
 
 ## Source fallback
 
 ```sh
 git clone https://github.com/jom-io/codex-link.git
 cd codex-link
-git checkout v0.1.2
+git checkout v0.1.3
 sh scripts/install.sh --source "$PWD"
 ```
 

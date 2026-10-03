@@ -83,6 +83,16 @@ func (d *Daemon) receive(ctx context.Context) {
 				d.notify()
 				continue
 			}
+			if m.Activity != nil {
+				if m.Kind != "progress" || m.Activity.TaskID != m.ReplyTo || m.Activity.Worker != m.Session {
+					log.Print("rejected invalid activity")
+					continue
+				}
+				if e := d.Store.SaveActivity(ctx, m.From, *m.Activity); e != nil {
+					log.Print("rejected invalid activity")
+					continue
+				}
+			}
 			if m.Kind != "receipt" {
 				v := d.base(m.From, "receipt")
 				v.ReplyTo = m.ID
@@ -114,6 +124,7 @@ func (d *Daemon) send(ctx context.Context) {
 			return
 		case <-heart.C:
 			heartbeat()
+			d.checkActivity(ctx)
 		case <-tick.C:
 			rs, e := d.Store.Pending(ctx)
 			if e != nil {
@@ -225,6 +236,8 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
+	State        string `json:"state,omitempty"`
+	Stage        string `json:"stage,omitempty"`
 	Code         string `json:"code,omitempty"`
 	To           string `json:"to,omitempty"`
 	Text         string `json:"text,omitempty"`
@@ -271,13 +284,53 @@ func (d *Daemon) Handler() http.Handler {
 }
 func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, error) {
 	switch path {
+	case "/v1/workers", "/v1/task/status":
+		return d.Store.Activities(ctx, a.ID)
+	case "/v1/worker/pulse":
+		r, e := d.Store.Get(ctx, a.ID)
+		if e != nil {
+			return nil, e
+		}
+		if r.Direction != "in" || r.Message.Kind != "task" || r.Status != "claimed" || r.Owner != a.Session || r.LeaseUntil <= time.Now().Unix() {
+			return nil, errors.New("worker pulse requires an active task lease owned by this session")
+		}
+		if a.State == "" {
+			a.State = "working"
+		}
+		if a.State == "completed" {
+			return nil, errors.New("use task complete to finish a task")
+		}
+		if e = d.reportActivity(ctx, r, a.Session, a.State, a.Stage); e != nil {
+			return nil, e
+		}
+		return d.Store.Activities(ctx, a.ID)
 	case "/v1/status":
 		n, e := d.Store.MaxSeq(ctx)
 		return map[string]any{"version": Version, "protocol": ProtocolVersion, "device_id": d.Config.DeviceID, "name": d.Config.Name, "workspace": d.Config.Workspace, "redis_connected": d.isConnected(), "oss_configured": d.Files != nil, "last_seq": n}, e
 	case "/v1/peers":
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		return d.Transport.Peers(c)
+		ps, e := d.Transport.Peers(c)
+		if e != nil {
+			return nil, e
+		}
+		out := []map[string]any{}
+		for _, p := range ps {
+			b, _ := json.Marshal(p)
+			var item map[string]any
+			json.Unmarshal(b, &item)
+			age := int64(time.Since(p.SeenAt).Seconds())
+			if age < 0 {
+				age = 0
+			}
+			item["age_seconds"] = age
+			item["health"] = "online"
+			if age > 90 {
+				item["health"] = "possibly_offline"
+			}
+			out = append(out, item)
+		}
+		return out, nil
 	case "/v1/pair/list":
 		return d.Store.Pairs(ctx)
 	case "/v1/pair/request":
@@ -413,7 +466,14 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		if e := d.Store.Claim(ctx, a.ID, a.Session, a.Lease); e != nil {
 			return nil, e
 		}
-		return d.Store.Get(ctx, a.ID)
+		r, e := d.Store.Get(ctx, a.ID)
+		if e != nil {
+			return nil, e
+		}
+		if e = d.reportActivity(ctx, r, a.Session, "claimed", ""); e != nil {
+			return nil, e
+		}
+		return r, nil
 	case "/v1/task/complete":
 		r, e := d.Store.Get(ctx, a.ID)
 		if e != nil {
@@ -426,6 +486,10 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		m.Conversation = r.Message.Conversation
 		m.ReplyTo = a.ID
 		if e = d.Store.Complete(ctx, a.ID, a.Session, a.Text, m); e != nil {
+			return nil, e
+		}
+		r.LeaseUntil = 0
+		if e = d.reportActivity(ctx, r, a.Session, "completed", ""); e != nil {
 			return nil, e
 		}
 		d.notify()

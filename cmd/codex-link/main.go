@@ -39,7 +39,10 @@ Setup:
   daemon run|install|start|stop|uninstall
 
 Communication (JSON output):
-  status | peers
+  status | peers | workers
+  worker new   (generate one unique session per Codex window)
+  task status ID
+  worker pulse TASK_ID --session UNIQUE_WORKER [--state working|waiting_user|blocked|stopped] [--stage TEXT]
   send --to NAME_OR_ID --text TEXT [--kind text|task|progress|result]
        [--session NAME] [--to-session NAME] [--conversation NAME] [--reply-to ID]
   inbox|history [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
@@ -82,9 +85,12 @@ func run(args []string) error {
 		}
 		return launch(home, args[1])
 	}
+	if len(args) == 2 && args[0] == "worker" && args[1] == "new" {
+		return printJSON(map[string]string{"session": "worker-" + link.NewID()})
+	}
 	op := args[0]
 	rest := args[1:]
-	if op == "file" || op == "task" || op == "pair" {
+	if op == "file" || op == "task" || op == "pair" || op == "worker" {
 		if len(rest) < 1 {
 			return errors.New("missing operation")
 		}
@@ -92,12 +98,12 @@ func run(args []string) error {
 		rest = rest[1:]
 	}
 	switch op {
-	case "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/list", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
+	case "workers", "worker/pulse", "task/status", "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/list", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
 	default:
 		return errors.New("unknown command; use --help")
 	}
 	var a link.APIRequest
-	if op == "get" || op == "file/fetch" || op == "task/claim" || op == "task/complete" || op == "pair/accept" || op == "pair/reject" {
+	if op == "worker/pulse" || op == "task/status" || op == "get" || op == "file/fetch" || op == "task/claim" || op == "task/complete" || op == "pair/accept" || op == "pair/reject" {
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
 			return errors.New("message/task ID required before flags")
 		}
@@ -106,6 +112,8 @@ func run(args []string) error {
 	}
 	fs := flag.NewFlagSet(op, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.StringVar(&a.State, "state", "working", "worker state: working|waiting_user|blocked|stopped")
+	fs.StringVar(&a.Stage, "stage", "", "current stage (no secrets)")
 	fs.StringVar(&a.Code, "code", "", "pairing verification code")
 	fs.StringVar(&a.To, "to", "", "recipient device name or ID")
 	fs.StringVar(&a.Text, "text", "", "message text")

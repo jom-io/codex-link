@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.3 — 2026-10-03
+
+- Add worker new, worker pulse, workers and task status commands.
+- Automatically send encrypted activity on claim/renew and completion; explicit pulses report work stages and blocking states.
+- Derive stale/unresponsive worker status after 90/180 seconds, notify state changes without refreshing the worker heartbeat, and prevent old updates from overwriting newer activity.
+- Display device heartbeat age and possibly_offline status in peers. Protocol v2 remains compatible; upgrade both ends for structured activity queries.
+- Window heartbeat is explicit, not automatic Codex wakeup or remote process monitoring.
+
 ## v0.1.2 — 2026-10-03
 
 - Clarify the live collaboration loop: acknowledge a claimed task immediately, run long processes asynchronously, poll the inbox between process checks and send periodic progress updates.

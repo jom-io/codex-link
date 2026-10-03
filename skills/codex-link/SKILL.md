@@ -62,3 +62,11 @@ The daemon receives and saves messages continuously while a task runs. `delivere
 ## Operational limits
 
 An idle Codex chat is not automatically awakened. The daemon keeps receiving; an active session waits or reads its inbox. Redis stream retention and OSS lifecycle rules bound offline recovery. STS credentials currently require manual renewal. Confirmed devices use pairwise keys; workspace discovery does not grant communication access. This is not a multi-tenant service.
+
+## Worker liveness (v0.1.3+)
+
+At the start of each new work window run `codex-link worker new` once and retain the returned unique `session` throughout that window's work. Do not regenerate it on each tool call or reuse another window's value. Existing tasks retain their current owner until safely handed over or completed.
+
+Claiming or renewing automatically sends an encrypted activity update. During a claimed task call `worker pulse TASK_ID --session UNIQUE_SESSION --state working --stage "short non-sensitive stage"` at most 60 seconds apart when the window can actively poll. Use `waiting_user`, `blocked`, or `stopped` as appropriate. Pulse requires your active lease but does not renew it; renew explicitly with `task claim` before expiry. Never launch a detached infinite pulse loop: it would make a closed Codex window appear alive. Stage text must contain no credentials or sensitive output.
+
+`workers` and `task status TASK_ID` show the latest locally known window activity, including age and lease expiry. No activity row means the peer/worker has not reported yet (possibly an older version), not proof of inactivity. Over 90 seconds without a worker call is `stale`; over 180 seconds is `unresponsive`. These are suspicion states and never authorize duplicate execution. The daemon sends transition notifications while it is alive; a stopped daemon cannot announce its own disappearance. `peers` independently reports service age and `possibly_offline` after 90 seconds. If Redis is disconnected, cached activity is unconfirmed: check `status` and wait for reconnection before drawing conclusions. `task complete` reports completion. Remote process liveness and automatic Codex awakening are not provided by this version.

@@ -4,7 +4,7 @@
 
 An encrypted message and file bridge for Codex sessions on two Macs. One lightweight Go daemon per macOS user receives messages continuously; every local Codex window uses the same CLI, inbox, task history and downloaded files.
 
-**Status:** v0.1.2. See the [changelog](CHANGELOG.md) for release notes. The application provides communication, not automatic remote command execution or automatic awakening of idle Codex chats. Aliyun OSS is the first supported file provider.
+**Status:** v0.1.3. See the [changelog](CHANGELOG.md) for release notes. The application provides communication, not automatic remote command execution or automatic awakening of idle Codex chats. Aliyun OSS is the first supported file provider.
 
 ## What it does
 
@@ -43,8 +43,8 @@ For a complete second-Mac walkthrough, see [installation guide (Chinese)](docs/i
 Download and inspect the installer from the chosen repository tag, then run it:
 
 ```sh
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -58,7 +58,7 @@ Requires Go 1.25+; normal Release installation needs no Go runtime or Python env
 ```sh
 git clone https://github.com/jom-io/codex-link.git
 cd codex-link
-git checkout v0.1.2
+git checkout v0.1.3
 sh scripts/install.sh --source "$PWD"
 ```
 
@@ -163,8 +163,8 @@ The native pairing dialog can appear even when no chat is active. The daemon con
 codex-link daemon stop
 codex-link configure --config /absolute/path/config.local.yaml
 codex-link daemon start
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.2/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.2 sh /tmp/codex-link-install.sh
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
 # Remove: sh scripts/uninstall.sh
 ```
 
@@ -189,7 +189,7 @@ go test ./...
 go test -race ./...   # Requires a working C toolchain for Go's race runtime.
 go vet ./...
 go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
-sh scripts/package.sh v0.1.2
+sh scripts/package.sh v0.1.3
 ```
 
 Tests cover automatic key agreement, mutual approval/rejection, new-device isolation, encrypted envelopes, file truncation/tampering/limits, SQLite restart persistence, concurrent task claims, delivery receipts, two daemon task/result exchange and offline catch-up with an embedded Redis test server. OSS tests use a TLS HTTP fixture and signed SDK requests; this is not a substitute for live OSS permission validation. Production code uses pure-Go SQLite and builds with `CGO_ENABLED=0`.
@@ -199,3 +199,5 @@ GitHub Actions tests pushes/PRs; pushing a `v*` tag tests and publishes both Mac
 ## License
 
 MIT, copyright 2026 jom-io. Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Worker monitoring: run `worker new` once per window, use that session to claim tasks, then call `worker pulse TASK_ID --session SESSION --stage "building"` while actively polling. Query `workers`, `task status TASK_ID`, and `peers` for worker and service health. Pulses do not renew leases. See the skill for timeout and disconnect semantics.
