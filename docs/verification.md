@@ -7,10 +7,12 @@ Automatic pairing revision included. Local development verification: 2026-10-03,
 - `CGO_ENABLED=0 go test ./... -count=1 -timeout=90s -v`: all functional and integration tests passed.
 - `CGO_ENABLED=0 go vet ./...`: no findings.
 - `gofmt` and shell syntax checks for install, uninstall, packaging and skill installer scripts.
-- CLI `version` and `--help` smoke checks.
+- CLI `version` and `--help` smoke checks; source installer tested using isolated binary/skill directories.
+- Initialization creates private device keys automatically in a mocked Keychain and preserves them during reconfiguration.
+- Native macOS pairing dialog script compiled successfully with `osacompile` (no automatic clicking).
 - YAML import, unknown-field rejection and secret separation from runtime configuration.
 - Automatic Ed25519/X25519 device identities, equal pairwise key derivation, signed messages and signature tamper rejection.
-- Both approvals required, mismatched confirmation-code rejection, rejected-peer blocking and isolation of an added third device.
+- Both approvals required, mismatched confirmation-code rejection, rejected-peer blocking, isolation of an added third device, simultaneous-request convergence and expiry rejection.
 - File round trips (empty, partial/full chunks), truncation/tamper detection and size enforcement.
 - Signed OSS V4 upload/download through a local TLS HTTP fixture; plaintext is not stored in the fixture.
 - SQLite restart persistence, duplicate suppression, one-winner concurrent task claiming, ownership checks and transactional completion.
@@ -25,6 +27,6 @@ File encryption microbenchmark (1 MiB input, in-memory source, discarded output)
 - Idle daemon CPU/RSS and long-running transfer measurements using actual configured services.
 - macOS notarization/signing (not supplied in this release).
 
-The local host has no active C developer toolchain, so local `go test -race` was not run. GitHub CI and Release workflows run `go test -race` on Ubuntu with its toolchain before packaging/publishing; inspect their actual status before declaring race verification complete.
+The local host has no active C developer toolchain, so local `go test -race` was not run. GitHub CI [run 37127487971](https://github.com/jom-io/codex-link/actions/runs/37127487971) passed `go vet`, `go test -race`, shell checks and both Mac builds for commit `06d67f2`. The release workflow repeats race tests before publishing; the latest run remains the authority for each tag.
 
 真实公网验证需用户提供配置，不应把模拟服务测试描述为云服务联调通过。Release 编译和分发结果以 GitHub Actions 运行及资产列表为准。

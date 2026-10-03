@@ -300,3 +300,54 @@ func TestPairingRejectAndThirdDeviceIsolation(t *testing.T) {
 		t.Fatal("new device inherited prior trust")
 	}
 }
+
+func TestSimultaneousPairingConvergesAndExpires(t *testing.T) {
+	mr := miniredis.RunT(t)
+	ctx := context.Background()
+	a, sa := testDevice("a", mr.Addr())
+	b, sb := testDevice("b", mr.Addr())
+	ta, _ := NewTransport(a, sa)
+	tb, _ := NewTransport(b, sb)
+	defer ta.Close()
+	defer tb.Close()
+	as, _ := OpenStore(t.TempDir())
+	bs, _ := OpenStore(t.TempDir())
+	defer as.Close()
+	defer bs.Close()
+	ta.store = as
+	tb.store = bs
+	ta.Heartbeat(ctx)
+	tb.Heartbeat(ctx)
+	da := &Daemon{Config: a, Store: as, Transport: ta, changed: make(chan struct{})}
+	db := &Daemon{Config: b, Store: bs, Transport: tb, changed: make(chan struct{})}
+	pa, e := da.ensurePair(ctx, b.DeviceID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	pb, e := db.ensurePair(ctx, a.DeviceID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	ma := da.base(b.DeviceID, "pair_request")
+	ma.ID = pa.ID
+	ma.Pair = da.offer(pa)
+	mb := db.base(a.DeviceID, "pair_request")
+	mb.ID = pb.ID
+	mb.Pair = db.offer(pb)
+	if e = da.receivePair(ctx, mb); e != nil {
+		t.Fatal(e)
+	}
+	if e = db.receivePair(ctx, ma); e != nil {
+		t.Fatal(e)
+	}
+	left, _ := as.Pair(ctx, b.DeviceID)
+	right, _ := bs.Pair(ctx, a.DeviceID)
+	if left.ID != right.ID || left.Code != right.Code {
+		t.Fatal("simultaneous requests did not converge")
+	}
+	left.ExpiresAt = time.Now().Add(-time.Minute).Unix()
+	as.SavePair(ctx, left, nil)
+	if _, e = da.decidePair(ctx, left.ID, left.Code, true); e == nil {
+		t.Fatal("expired request accepted")
+	}
+}

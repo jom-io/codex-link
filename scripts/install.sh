@@ -3,7 +3,7 @@ set -eu
 # Download a published release, or explicitly build a checked-out source tree.
 repo="jom-io/codex-link"
 bin_dir="${CODEX_LINK_BIN_DIR:-$HOME/.local/bin}"
-skill_dir="${CODEX_HOME:-$HOME/.codex}/skills/codex-link"
+skill_dir="${CODEX_LINK_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-link}"
 source_dir=""
 if [ "${1:-}" = "--source" ]; then
   source_dir="${2:-.}"
