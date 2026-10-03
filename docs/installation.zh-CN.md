@@ -1,12 +1,12 @@
 # 在另一台 Mac 安装并使用 codex-link
 
-本指南针对另一台 Mac 上的 Codex，可按顺序执行。仓库：https://github.com/jom-io/codex-link 。优先使用公开 Release，不需要安装 Go、Python 或 Git。
+本指南针对另一台 Mac 上的 Codex，可按顺序执行。仓库：https://github.com/jom-io/codex-link 。优先使用公开 Release，不需要安装 Go、Python 或 Git。版本变更请查看 [CHANGELOG](https://github.com/jom-io/codex-link/blob/master/CHANGELOG.md)。
 
 ## 1. 下载并安装应用与 skill
 
 ```sh
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.0/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.0 sh /tmp/codex-link-install.sh
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -19,7 +19,7 @@ codex-link version
 
 ```sh
 mkdir -p "$HOME/Library/Application Support/codex-link"
-curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.0/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
+curl --fail --location https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/config.example.yaml -o "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 ```
 
@@ -73,7 +73,7 @@ chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 
 文件接收返回可供本机各窗口访问的绝对路径。首次文件发送触发配对时没有上传文件，确认后需要重试该文件命令。目录由用户明确选择并打包；附件不会自动执行。
 
-收到执行任务后，先确认用户授权，再 `task claim ID --session ALIAS`，执行并验证，最后 `task complete ID --session ALIAS --text RESULT`。对端送达回执不等于任务完成。
+收到执行任务后，先运行 `task list --session ALIAS --conversation setup` 找到该任务，复制完整 `message.id`（不要拿 `reply_to` 的父消息 ID）。每个并行工作的 Codex 窗口使用不同且稳定的 `--session` 别名；同名别名会被视为同一租约持有者。先确认用户授权，再 `task claim TASK_MESSAGE_ID --session ALIAS`，执行并验证，最后 `task complete TASK_MESSAGE_ID --session ALIAS --text RESULT`。认领报错会指出任务不存在、已经完成或由哪个 session 持有以及租约时间。对端送达回执不等于任务完成。
 
 ## 排查
 

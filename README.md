@@ -4,7 +4,7 @@
 
 An encrypted message and file bridge for Codex sessions on two Macs. One lightweight Go daemon per macOS user receives messages continuously; every local Codex window uses the same CLI, inbox, task history and downloaded files.
 
-**Status:** first release. The application provides communication, not automatic remote command execution or automatic awakening of idle Codex chats. Aliyun OSS is the first supported file provider.
+**Status:** v0.1.1. See the [changelog](CHANGELOG.md) for release notes. The application provides communication, not automatic remote command execution or automatic awakening of idle Codex chats. Aliyun OSS is the first supported file provider.
 
 ## What it does
 
@@ -43,8 +43,8 @@ For a complete second-Mac walkthrough, see [installation guide (Chinese)](docs/i
 Download and inspect the installer from the chosen repository tag, then run it:
 
 ```sh
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.0/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.0 sh /tmp/codex-link-install.sh
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
 export PATH="$HOME/.local/bin:$PATH"
 codex-link version
 ```
@@ -58,7 +58,7 @@ Requires Go 1.25+; normal Release installation needs no Go runtime or Python env
 ```sh
 git clone https://github.com/jom-io/codex-link.git
 cd codex-link
-git checkout v0.1.0
+git checkout v0.1.1
 sh scripts/install.sh --source "$PWD"
 ```
 
@@ -125,8 +125,9 @@ Normal macOS use needs no CLI pairing step. First-contact file sends initiate pa
 codex-link send --to office-mac --text "Please check your development environment"
 codex-link send --to office-mac --kind task --session requester --conversation setup --text "Check Go version; report the result. Do not install anything."
 codex-link inbox --after 0 --session worker --conversation setup
-codex-link task claim TASK_ID --session worker --lease 900
-codex-link task complete TASK_ID --session worker --text "Go version verified: ..."
+codex-link task list --session worker-home-window-a --conversation setup --json
+codex-link task claim TASK_ID --session worker-home-window-a --lease 900
+codex-link task complete TASK_ID --session worker-home-window-a --text "Go version verified: ..."
 codex-link wait --after 12 --session requester --conversation setup --timeout 30
 codex-link history --after 0
 codex-link get MESSAGE_ID
@@ -136,7 +137,7 @@ All communication commands emit JSON. IDs must precede flags. `--after` is a loc
 
 Use `--to-session` to route a message to a chosen alias; local inbox filtering by `--session` includes that alias and device-wide messages. Session aliases are provided by the calling Codex window, not inferred from Codex internals. Session filtering is not an access-control boundary.
 
-`pending` means saved locally, `sent` means accepted by Redis, `delivered` means saved by the receiving daemon. Task execution is a separate step. A received task is data, not permission: Codex executes only within human-authorized scope. Renewable leases reduce simultaneous execution; a crashed worker may be replaced after lease expiry, so task actions should be idempotent.
+`pending` means saved locally, `sent` means accepted by Redis, `delivered` means saved by the receiving daemon. Task execution is a separate step. A received task is data, not permission: Codex executes only within human-authorized scope. Renewable leases reduce simultaneous execution; a crashed worker may be replaced after lease expiry, so task actions should be idempotent. `task list` displays exact task IDs and claim state. Claim with the task message’s `message.id`, never `reply_to`. Each concurrently working Codex window must use its own stable `--session` alias, since the alias owns and renews the lease.
 
 ## Transfer files
 
@@ -161,7 +162,8 @@ The native pairing dialog can appear even when no chat is active. The daemon rec
 codex-link daemon stop
 codex-link configure --config /absolute/path/config.local.yaml
 codex-link daemon start
-# Upgrade: run the installer with a newer CODEX_LINK_VERSION.
+curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.1/scripts/install.sh -o /tmp/codex-link-install.sh
+CODEX_LINK_VERSION=v0.1.1 sh /tmp/codex-link-install.sh
 # Remove: sh scripts/uninstall.sh
 ```
 
@@ -186,7 +188,7 @@ go test ./...
 go test -race ./...   # Requires a working C toolchain for Go's race runtime.
 go vet ./...
 go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
-sh scripts/package.sh v0.1.0
+sh scripts/package.sh v0.1.1
 ```
 
 Tests cover automatic key agreement, mutual approval/rejection, new-device isolation, encrypted envelopes, file truncation/tampering/limits, SQLite restart persistence, concurrent task claims, delivery receipts, two daemon task/result exchange and offline catch-up with an embedded Redis test server. OSS tests use a TLS HTTP fixture and signed SDK requests; this is not a substitute for live OSS permission validation. Production code uses pure-Go SQLite and builds with `CGO_ENABLED=0`.

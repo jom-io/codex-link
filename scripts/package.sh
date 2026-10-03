@@ -13,8 +13,8 @@ for arch in arm64 amd64; do
   cp -R "$root/docs" "$stage/docs"
   cp -R "$root/third_party" "$stage/third_party"
   cp "$root/THIRD_PARTY_NOTICES.md" "$stage/"
-  cp "$root/LICENSE" "$root/README.md" "$root/README.zh-CN.md" "$root/config.example.yaml" "$stage/"
-  COPYFILE_DISABLE=1 tar -czf "$out/codex-link_darwin_${arch}.tar.gz" -C "$stage" codex-link skills scripts docs third_party THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md config.example.yaml
+  cp "$root/LICENSE" "$root/README.md" "$root/README.zh-CN.md" "$root/CHANGELOG.md" "$root/config.example.yaml" "$stage/"
+  COPYFILE_DISABLE=1 tar -czf "$out/codex-link_darwin_${arch}.tar.gz" -C "$stage" codex-link skills scripts docs third_party THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml
   rm -rf "$stage"
 done
 (cd "$out" && shasum -a 256 codex-link_darwin_arm64.tar.gz codex-link_darwin_amd64.tar.gz > checksums.txt)

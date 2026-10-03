@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -130,6 +131,29 @@ func (s *Store) List(ctx context.Context, after int64, limit int, history bool, 
 	defer rows.Close()
 	return scanRecords(rows)
 }
+func (s *Store) ListTasks(ctx context.Context, after int64, limit int, session, conversation string) ([]Record, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+	q := "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE seq>? AND direction='in' AND json_extract(body,'$.kind')='task'"
+	args := []any{after}
+	if session != "" {
+		q += " AND (COALESCE(json_extract(body,'$.to_session'),'')='' OR json_extract(body,'$.to_session')=?)"
+		args = append(args, session)
+	}
+	if conversation != "" {
+		q += " AND json_extract(body,'$.conversation')=?"
+		args = append(args, conversation)
+	}
+	q += " ORDER BY seq LIMIT ?"
+	args = append(args, limit)
+	rows, e := s.db.QueryContext(ctx, q, args...)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	return scanRecords(rows)
+}
 func (s *Store) Pending(ctx context.Context) ([]Record, error) {
 	rows, e := s.db.QueryContext(ctx, "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE direction='out' AND status='pending' ORDER BY CASE WHEN json_extract(body,'$.kind') LIKE 'pair_%' THEN 0 ELSE 1 END,seq LIMIT 100")
 	if e != nil {
@@ -173,7 +197,23 @@ func (s *Store) Claim(ctx context.Context, id, owner string, seconds int) error 
 	}
 	n, _ := res.RowsAffected()
 	if n != 1 {
-		return errors.New("task unavailable, completed or claimed by another session")
+		r, lookupErr := s.Get(ctx, id)
+		if lookupErr != nil {
+			return errors.New("task not found; use the exact message.id from `task list` or `inbox` (do not use reply_to)")
+		}
+		if r.Direction != "in" {
+			return errors.New("cannot claim an outgoing message; use the incoming task's message.id")
+		}
+		if r.Message.Kind != "task" {
+			return errors.New("message is not a task; use the task's own message.id, not reply_to")
+		}
+		if r.Status == "completed" {
+			return errors.New("task is already completed")
+		}
+		if r.Status == "claimed" && r.LeaseUntil > now && r.Owner != owner {
+			return fmt.Errorf("task is claimed by session %q until %s; use a unique --session for each Codex window, or wait for the lease to expire", r.Owner, time.Unix(r.LeaseUntil, 0).UTC().Format(time.RFC3339))
+		}
+		return errors.New("task could not be claimed; refresh `task list` and use its exact message.id")
 	}
 	return nil
 }

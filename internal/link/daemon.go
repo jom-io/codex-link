@@ -349,6 +349,8 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		return map[string]any{"id": m.ID, "status": status, "message": m, "pairing": pair}, nil
 	case "/v1/inbox", "/v1/history":
 		return d.Store.List(ctx, a.After, a.Limit, path == "/v1/history", a.Session, a.Conversation)
+	case "/v1/task/list":
+		return d.Store.ListTasks(ctx, a.After, a.Limit, a.Session, a.Conversation)
 	case "/v1/wait":
 		if a.Timeout < 1 || a.Timeout > 60 {
 			return nil, errors.New("timeout must be 1–60 seconds")

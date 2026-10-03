@@ -43,6 +43,7 @@ Communication (JSON output):
   send --to NAME_OR_ID --text TEXT [--kind text|task|progress|result]
        [--session NAME] [--to-session NAME] [--conversation NAME] [--reply-to ID]
   inbox|history [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
+  task list [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
   wait [--after SEQ] [--timeout 30] [--session NAME] [--conversation NAME]
   get ID
   pair list|request --to NAME|accept ID --code CODE|reject ID --code CODE
@@ -91,7 +92,7 @@ func run(args []string) error {
 		rest = rest[1:]
 	}
 	switch op {
-	case "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
+	case "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/list", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
 	default:
 		return errors.New("unknown command; use --help")
 	}
