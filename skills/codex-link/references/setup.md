@@ -28,3 +28,5 @@ The first provider implementation is Aliyun OSS. Use an HTTPS regional endpoint,
 Start with `codex-link daemon start`. Inspect `status`, `peers`, and the local `daemon.log`. Keychain must be accessible in the logged-in user's session. On reconfiguration, `daemon stop`, import YAML again, then `daemon start`.
 
 Rollback: stop the daemon, restore `~/.local/bin/codex-link.previous` and the matching `.previous` skill directory, then start. `scripts/uninstall.sh` removes the application and LaunchAgent but preserves data and credentials.
+
+For a complete second-Mac Chinese walkthrough, read https://github.com/jom-io/codex-link/blob/master/docs/installation.zh-CN.md . The guide may contain documentation updates newer than the pinned binary release.

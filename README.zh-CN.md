@@ -36,6 +36,8 @@ GitHub 仓库 / Releases：源码、skill、Mac 安装包
 
 ## 安装
 
+另一台 Mac 上的 Codex 可按[完整安装使用指南](docs/installation.zh-CN.md)执行，涵盖 Release 安装、本机配置、常驻启动、首次配对及验证。
+
 ### Release 安装（推荐）
 
 下载并检查指定版本的安装脚本后运行：

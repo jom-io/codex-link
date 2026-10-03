@@ -36,6 +36,8 @@ No inbound public port is required on either Mac. Redis carries signed discovery
 
 ## Install
 
+For a complete second-Mac walkthrough, see [installation guide (Chinese)](docs/installation.zh-CN.md). It includes Release installation, local configuration, startup, pairing and verification.
+
 ### Stable Release (recommended)
 
 Download and inspect the installer from the chosen repository tag, then run it:

@@ -10,3 +10,7 @@ config.local.json
 
 config.local.yaml
 config.local.yml
+
+local.yaml
+
+local.yml

@@ -30,3 +30,7 @@ File encryption microbenchmark (1 MiB input, in-memory source, discarded output)
 The local host has no active C developer toolchain, so local `go test -race` was not run. GitHub CI [run 37127487971](https://github.com/jom-io/codex-link/actions/runs/37127487971) passed `go vet`, `go test -race`, shell checks and both Mac builds for commit `06d67f2`. The release workflow repeats race tests before publishing; the latest run remains the authority for each tag.
 
 真实公网验证需用户提供配置，不应把模拟服务测试描述为云服务联调通过。Release 编译和分发结果以 GitHub Actions 运行及资产列表为准。
+
+## Local configured infrastructure check (2026-10-03)
+
+The user-provided configuration imported successfully into macOS Keychain. A live OSS encrypted upload/download probe passed content verification and requested deletion of its temporary object. Redis did not pass: TLS was enabled in configuration but the configured endpoint answered an unauthenticated plaintext Redis PING. No credentials were sent by the plaintext diagnostic. End-to-end live messaging remains pending correction of the transport configuration and a two-device test. The public v0.1.0 installer successfully installed and verified the Mac binary and skill in isolated local directories.
