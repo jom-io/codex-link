@@ -506,3 +506,82 @@ func TestFileCacheRejectsTraversal(t *testing.T) {
 		t.Fatal("unsafe object suffix accepted")
 	}
 }
+
+func TestLocalArrivalAfterAdvancedCursor(t *testing.T) {
+	store, e := OpenStore(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	local := sample("task")
+	local.To = local.From
+	local.ToSession = "receiver"
+	if e = store.Enqueue(ctx, local); e != nil {
+		t.Fatal(e)
+	}
+	other := sample("text")
+	if e = store.Accept(ctx, &other, "7-0", nil); e != nil {
+		t.Fatal(e)
+	}
+	// A reader has already seen later records while local delivery is pending.
+	after, _ := store.MaxSeq(ctx)
+	if e = store.deliverLocal(ctx, local.ID); e != nil {
+		t.Fatal(e)
+	}
+	inbox, e := store.List(ctx, after, 100, false, "receiver", "")
+	if e != nil || len(inbox) != 1 || inbox[0].Message.ID != local.ID || inbox[0].Seq <= after {
+		t.Fatal("advanced cursor lost local arrival", e, inbox)
+	}
+	if e = store.Claim(ctx, local.ID, "receiver", 60); e != nil {
+		t.Fatal(e)
+	}
+	if cursor, _ := store.Cursor(ctx); cursor != "7-0" {
+		t.Fatal("local delivery altered Redis cursor")
+	}
+}
+
+func TestExistingSelfPairFileKeysRemainCompatible(t *testing.T) {
+	da, db := pairedRoutingDaemons(t, "127.0.0.1:1")
+	ctx := context.Background()
+	e := da.Store.SavePair(ctx, Pair{Peer: da.Transport.LocalPeer(), Nonce: NewID(), LocalApproved: true, RemoteApproved: true}, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	legacyKey, _ := da.Transport.PairKey(ctx, da.Config.DeviceID)
+	modernKey, _ := da.fileKey(ctx, da.Config.DeviceID)
+	if legacyKey == modernKey {
+		t.Fatal("local and legacy keys not separated")
+	}
+	old := sample("file")
+	old.From, old.To = da.Config.DeviceID, da.Config.DeviceID
+	if key, e := da.receivedFileKey(ctx, old); e != nil || key != legacyKey {
+		t.Fatal("legacy self file lost its key", e)
+	}
+	source := filepath.Join(da.Home, "self-pair.txt")
+	os.WriteFile(source, []byte("new local file with existing self pair"), 0600)
+	m := queued(t, da, "file/send", APIRequest{To: "self", Path: source})
+	if e = da.deliverOutgoing(ctx, m); e != nil {
+		t.Fatal(e)
+	}
+	if key, e := da.receivedFileKey(ctx, m); e != nil || key != modernKey {
+		t.Fatal("new local file used legacy key", e)
+	}
+	// A pre-upgrade self-send has an OSS object but no modern staging marker.
+	routingOSS(t, da, db)
+	old.File, e = da.Files.Upload(ctx, source, da.Config.DeviceID, legacyKey)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = da.Store.Enqueue(ctx, old); e != nil {
+		t.Fatal(e)
+	}
+	if e = da.deliverOutgoing(ctx, old); e != nil {
+		t.Fatal("legacy self-send failed", e)
+	}
+	path, _ := da.Files.cachePath(old)
+	os.Remove(path)
+	if _, e = da.dispatch(ctx, "/v1/file/fetch", APIRequest{ID: old.ID}); e != nil {
+		t.Fatal("legacy self file could not be fetched after local delivery", e)
+	}
+}

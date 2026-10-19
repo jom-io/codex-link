@@ -32,26 +32,53 @@ func (d *Daemon) fileKey(ctx context.Context, peer string) (string, error) {
 	return d.Transport.PairKey(ctx, peer)
 }
 
+func (d *Daemon) receivedFileKey(ctx context.Context, m Message) (string, error) {
+	// Older versions could have self-paired cloud files. Keep their original
+	// pair-derived key, even after local routing is enabled on that device.
+	if m.From == d.Config.DeviceID && d.Store.metadata(ctx, "local-file-key:"+m.ID) != "v1" {
+		if key, e := d.Transport.PairKey(ctx, m.From); e == nil {
+			return key, nil
+		}
+	}
+	return d.fileKey(ctx, m.From)
+}
+
 func (d *Daemon) deliverOutgoing(ctx context.Context, m Message) error {
 	if m.To == d.Config.DeviceID {
 		if m.File != nil {
-			src, e := os.Open(d.Files.stagedPath(m.ID))
-			if e != nil {
-				return e
-			}
-			key, e := d.fileKey(ctx, m.To)
-			if e == nil {
-				d.fileMu.Lock()
-				var path string
-				path, e = d.Files.receive(m, key, src)
-				d.fileMu.Unlock()
-				if e == nil {
-					e = d.Store.SetFile(ctx, m.ID, path)
+			if d.Store.metadata(ctx, "staged-file:"+m.ID) == "" {
+				key, e := d.receivedFileKey(ctx, m)
+				if e != nil {
+					return e
 				}
-			}
-			src.Close()
-			if e != nil {
-				return e
+				d.fileMu.Lock()
+				path, err := d.Files.Download(ctx, m, key)
+				d.fileMu.Unlock()
+				if err != nil {
+					return err
+				}
+				if e = d.Store.SetFile(ctx, m.ID, path); e != nil {
+					return e
+				}
+			} else {
+				src, e := os.Open(d.Files.stagedPath(m.ID))
+				if e != nil {
+					return e
+				}
+				key, e := d.fileKey(ctx, m.To)
+				if e == nil {
+					d.fileMu.Lock()
+					var path string
+					path, e = d.Files.receive(m, key, src)
+					d.fileMu.Unlock()
+					if e == nil {
+						e = d.Store.SetFile(ctx, m.ID, path)
+					}
+				}
+				src.Close()
+				if e != nil {
+					return e
+				}
 			}
 		}
 		if e := d.Store.deliverLocal(ctx, m.ID); e != nil {

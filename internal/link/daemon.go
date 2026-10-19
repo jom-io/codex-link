@@ -370,6 +370,12 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 				os.Remove(d.Files.stagedPath(m.ID))
 				return nil, e
 			}
+			if local {
+				if e = d.Store.setMetadata(ctx, "local-file-key:"+m.ID, "v1"); e != nil {
+					os.Remove(d.Files.stagedPath(m.ID))
+					return nil, e
+				}
+			}
 		}
 		if e = d.Store.Enqueue(ctx, m); e != nil {
 			if m.File != nil {
@@ -425,7 +431,7 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			return nil, errors.New("only received files can be fetched")
 		}
 		d.fileMu.Lock()
-		key, keyErr := d.fileKey(ctx, r.Message.From)
+		key, keyErr := d.receivedFileKey(ctx, r.Message)
 		if keyErr != nil {
 			d.fileMu.Unlock()
 			return nil, keyErr

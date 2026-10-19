@@ -7,7 +7,8 @@ is a daemon concern, not an MCP transport, model service or task executor.
 
 All sends retain a durable SQLite outbox. The same device ID selects local
 delivery before any cloud operation. After a file is cached, the shared database
-row becomes an inbox row; its ID, session, conversation and task lease semantics
+row becomes an inbox row with a fresh arrival sequence, so readers that already
+advanced past the queued row cannot miss it. Its ID, session, conversation and task lease semantics
 are unchanged. Local history contains one copy, not separate sender/receiver
 rows for the same unique ID. This applies to task results and worker progress too.
 

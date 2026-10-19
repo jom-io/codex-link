@@ -32,7 +32,10 @@ func (s *Store) deliverLocal(ctx context.Context, id string) error {
 		return e
 	}
 	defer tx.Rollback()
-	res, e := tx.ExecContext(ctx, "UPDATE messages SET direction='in',status='received' WHERE id=? AND direction='out' AND status='pending' AND json_extract(body,'$.from')=json_extract(body,'$.to')", id)
+	// Readers may have advanced past the queued outbox row while a file was
+	// transferring. Arrival needs a fresh seq, otherwise an after cursor can
+	// permanently miss the newly visible inbox record.
+	res, e := tx.ExecContext(ctx, "UPDATE messages SET seq=(SELECT COALESCE(MAX(seq),0)+1 FROM messages),direction='in',status='received' WHERE id=? AND direction='out' AND status='pending' AND json_extract(body,'$.from')=json_extract(body,'$.to')", id)
 	if e != nil {
 		return e
 	}
