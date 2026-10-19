@@ -34,7 +34,7 @@ Codex / Claude Code / DeepSeek Harness
                  | another active harness
 ```
 
-The daemon transports data. It does not execute received commands or automatically awaken idle chats. `delivered` means saved by the peer daemon, not read or executed. Session aliases route messages and own task leases; they are not a sandbox.
+The daemon transports data without executing received commands. Idle chats remain manual unless an explicit local native wake binding is enabled. `delivered` means saved by the peer daemon, not read or executed. Session aliases route messages and own task leases; they are not a sandbox.
 
 ## Upgrade from Git
 
@@ -138,7 +138,7 @@ Claim the task's own `message.id`, never `reply_to`. Immediately acknowledge a c
 - LaunchAgents start after login and require accessible Keychain. No Windows/Linux installer or service-manager integration is added.
 - At-least-once transport/deduplication does not guarantee exactly-once task effects. A crashed/expired lease needs task-specific idempotency. Stale activity does not prove a process stopped.
 - Cloud operators can see names, public keys, routing, timings, sizes and object paths; local SQLite/cache are protected by user permissions, not database encryption. Static pairwise keys do not provide forward secrecy.
-- Redis/OSS retention bounds offline recovery. STS refresh remains manual. No automatic task executor, idle-chat wakeup, GUI, archive extraction, cross-user inbox or new storage provider is added.
+- Redis/OSS retention bounds offline recovery. STS refresh remains manual. The optional local wake adapter only notifies a bound chat. No remote command executor, standalone GUI, archive extraction, cross-user inbox or new storage provider is added.
 
 ## Development
 

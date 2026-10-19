@@ -32,7 +32,7 @@ Files use a domain-separated key derived from the confirmed pair (same-daemon fi
 
 LaunchAgent runs after user login; Keychain must be available. Native confirmation uses macOS scripting additions, not an active Codex chat. `pairing_headless` disables dialogs and requires an explicit human-authorized local acceptance command. Connections retry; idle receiving uses blocking XREAD. Shutdown cancels requests, closes Redis, waits for workers and closes SQLite.
 
-Cloud operators see names/public keys, routing, timestamps, object paths and sizes; they can deny service or replay ciphertext. Local history/cache rely on user permissions and disk security, not SQLite encryption. Configuration changes preserve identity; lost identity keys cannot be silently replaced. No idle Codex wakeup, automatic STS refresh or remote command executor is present.
+Cloud operators see names/public keys, routing, timestamps, object paths and sizes; they can deny service or replay ciphertext. Local history/cache rely on user permissions and disk security, not SQLite encryption. Configuration changes preserve identity; lost identity keys cannot be silently replaced. An optional local host adapter can wake a deliberately bound native chat through the existing inbox API; it is separate from the transport daemon and adds no execution authorization. Automatic STS refresh and remote command execution remain outside this component.
 
 ## Harness adapters (v0.2)
 

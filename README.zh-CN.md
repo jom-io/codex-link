@@ -39,7 +39,7 @@ AGENT_LINK_VERSION=v0.2.0-rc.3 sh scripts/install.sh --source "$PWD"
 - Go daemon + 私有 Unix socket + Keychain + LaunchAgent，每个 macOS 用户一个服务。
 - CLI、通用 Skill、MCP stdio 接入，不依赖特定模型。
 
-消息已送达只表示接收 daemon 已保存，不能证明聊天已读取或任务已执行。收到任务不等于获得执行授权；daemon 不自动执行命令，也不唤醒空闲聊天。会话别名用于路由和租约归属，不提供权限隔离。
+消息已送达只表示接收 daemon 已保存，不能证明聊天已读取或任务已执行。收到任务不等于获得执行授权；daemon 不自动执行命令；启用明确的本地唤醒绑定后，可由适配器通知目标聊天。会话别名用于路由和租约归属，不提供权限隔离。
 
 ## 自动选路
 

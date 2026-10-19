@@ -83,6 +83,6 @@ chmod 600 "$HOME/Library/Application Support/codex-link/setup.local.yaml"
 - 收不到新消息：检查是否两边确认配对；`inbox` 的数字游标必须来自本机。
 - OSS 不可用：用 `doctor --files` 检查 endpoint/region、bucket、RAM 权限和 STS 到期。
 - 修改配置：先 `daemon stop`，重新 `configure --config ...`，再 `daemon start`。不要删除已有设备私钥。
-- 空闲 Codex 没有自动回复：后台应用能收件，但不会自动唤醒空闲聊天；让活跃会话读取收件箱或等待。
+- 空闲 Codex 没有自动回复：后台应用能收件；未启用本地唤醒绑定时，需要活跃会话读取收件箱。需要自动续接时，按 [收件唤醒说明](wake.md) 为选定聊天启用原生适配器。
 
 仅在检查实际服务和双端结果后报告联调通过，不要将 CI 的模拟服务测试当作两台机器已经通信。
