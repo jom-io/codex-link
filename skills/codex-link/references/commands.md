@@ -29,3 +29,16 @@ Messages have `id`, `protocol`, `from`, `to`, `kind`, optional conversation/sess
 An online peer has a recent `seen_at` (heartbeat every 30 seconds; treat older than 90 seconds as offline). The registry retains previously registered devices so their names can still be resolved offline. Duplicate names require an explicit device ID.
 
 First-contact text/tasks queue while both native dialogs await confirmation. `pair/list` returns public peer information, request ID, code and local/remote approval state. `pair accept ID --code CODE` and `pair reject ID --code CODE` are local explicit decisions, not remote commands. Never accept without human authorization. Pairing events are hidden from ordinary inbox/history. First file send must be retried after pairing; the initial attempt uploads no data.
+
+## macOS file-path diagnosis
+
+The background daemon opens the selected source path. If a file send stalls
+before returning an ID while status/messages remain responsive, inspect the
+file read as well as transport state. A Documents path has been observed stuck
+inside system `open` even though an identical temporary copy sent immediately;
+the OS-level cause was not confirmed. Use a private local temporary copy of
+only that user-selected file (directory 0700, file 0600), preserve the original,
+and verify the copy's hash and eventual receipt. Do not copy adjacent files or
+broaden privacy permissions as a workaround. Inspect history before retrying
+an uncertain send. `--timeout` controls `wait`; file RPCs default to 30 minutes,
+so use a bounded caller when diagnosing a stalled operation.

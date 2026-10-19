@@ -54,6 +54,26 @@ canceled same-file waiter and release of inactive lock entries. Full Go
 race/vet checks passed after this fix. This reproduction does not establish the
 uncaptured home incident's exact cause.
 
+Both Macs then installed rc.5 from Git commit `f94b70b`. The home Mac ran the
+two concurrency regressions with the race detector, retained the same native
+listener through the daemon upgrade, and completed a fresh office task in a new
+automatic native turn. CLI and daemon reported rc.5, the actual chat/worker IDs
+matched, and the listener remained enabled with no pending notices. A private
+temporary copy of the same 247-byte sample sent locally in 0.010s and fetched
+in 0.013s with the original digest. The real home Codex test was deferred after
+the user confirmed its network problem. A reverse read-only test found no wake
+binding on office; its active model polled that task normally, so bidirectional
+automatic wake is not claimed.
+
+An independent office path-access issue remains: a background daemon read of a
+bundle under Documents blocked in the system `open` call, while an identical
+private temporary copy sent immediately. The thread sample does not identify
+the OS-level cause. No privacy permissions were broadened. The blocked test
+client was stopped and the daemon restarted to discard that test request.
+Use a private copy of only the selected file when diagnosing such a path issue;
+do not mistake it for a proven transfer-lock deadlock. See the file-path note
+in the command reference.
+
 Local Go race/vet checks and nine Node adapter tests passed. Real Codex desktop
 wake, live UI fallback and native plugin disable/re-enable recovery remain
 unverified; queue recovery and stopped dispatch have automated coverage.
