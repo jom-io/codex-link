@@ -24,6 +24,10 @@ Send normally. If the result is `pairing_pending`, the application displays a na
 
 `pair list` shows pending/confirmed pairs. For intentionally headless use, request explicit human confirmation and call `pair accept REQUEST_ID --code CODE` on that local device; rejection uses `pair reject`. New devices require their own pairwise confirmations. Do not infer trust from a name or Redis access alone. If file send returns pairing_pending, wait for confirmation and retry that file send; no file content is uploaded before pairing.
 
+## MCP sessions
+
+When using MCP, call `agent_link_worker_new` once for each chat/window and retain its returned full session. Pass it as `session` on subsequent tools. DeepSeek desktop can share one MCP process across multiple chats, so the process-default context alone cannot distinguish those chats. To resume an active lease after a process restart, restart the adapter with `--session` set to that exact owner. This is routing, not access isolation.
+
 ## Communicate
 
 Read `references/commands.md` for exact CLI forms. All communication commands return JSON; failures use stderr JSON and a nonzero exit status.

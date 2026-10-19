@@ -15,7 +15,7 @@ git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.1 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
@@ -48,7 +48,7 @@ agent-link mcp --harness deepseek-harness
 agent-link mcp --harness claude-code --allow-write
 ```
 
-通过 `agent_link_context` 查询当前 MCP 进程的唯一 session。持有任务租约的重连会话可以显式传 `--session`，不同活跃窗口不能共用 owner。MCP 不提供 shell、配对确认、凭据配置或后台管理工具。stdio 采用逐行 JSON-RPC，工具调用串行，wait 最多 30 秒，无 HTTP 端口。完整 Skill 位于 [skills/agent-link](skills/agent-link/SKILL.md)，旧 `codex-link` Skill 仍可使用。
+DeepSeek 桌面可在多个聊天间共用一个 MCP 进程，每个聊天先调用一次 `agent_link_worker_new`，后续工具均传入返回的 session；用 `agent_link_context` 查询。持有任务租约的重连会话可以显式传 `--session`，不同活跃窗口不能共用 owner。MCP 不提供 shell、配对确认、凭据配置或后台管理工具。stdio 采用逐行 JSON-RPC，工具调用串行，wait 最多 30 秒，无 HTTP 端口。完整 Skill 位于 [skills/agent-link](skills/agent-link/SKILL.md)，旧 `codex-link` Skill 仍可使用。
 
 ## 兼容策略
 
@@ -70,4 +70,4 @@ agent-link mcp --harness claude-code --allow-write
 
 保留原有能力边界：不保证外部任务副作用 exactly-once，不新增自动执行器、跨用户收件箱、自动 STS 刷新、归档自动解压或其他存储提供方。设备离线恢复受 Redis/OSS 保留策略限制；worker 超时只表示疑似无响应，不能据此重复执行任务。macOS 登录会话和 Keychain 需可用。
 
-开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0-rc.1`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。
+开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0-rc.2`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。

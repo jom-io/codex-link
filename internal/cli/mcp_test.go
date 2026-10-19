@@ -118,3 +118,33 @@ func TestNamedAgentsHaveUniqueLeaseOwners(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPSharedHostAllocatesDistinctChatSessions(t *testing.T) {
+	var owners []string
+	s := mcpServer{session: "shared-host", agent: "home-ds", write: true, call: func(_ context.Context, _, op string, a link.APIRequest) (json.RawMessage, error) {
+		owners = append(owners, a.Session)
+		return json.RawMessage(`{"status":"claimed"}`), nil
+	}}
+	var allocated []string
+	for i := 0; i < 2; i++ {
+		result, e := s.toolCall(context.Background(), "agent_link_worker_new", json.RawMessage(`{}`))
+		if e != nil {
+			t.Fatal(e)
+		}
+		session := result.(map[string]string)["session"]
+		allocated = append(allocated, session)
+		args, _ := json.Marshal(map[string]string{"id": "same-task", "session": session})
+		if _, e = s.toolCall(context.Background(), "agent_link_task_claim", args); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if owners[0] == owners[1] || !strings.HasPrefix(owners[0], "home-ds-") {
+		t.Fatal("shared MCP host collapsed lease owners", owners)
+	}
+	// A fresh MCP process must explicitly resume the old owner at startup.
+	other := mcpServer{session: "other-host", write: true}
+	args, _ := json.Marshal(map[string]string{"id": "same-task", "session": allocated[0]})
+	if _, e := other.toolCall(context.Background(), "agent_link_task_claim", args); e == nil {
+		t.Fatal("unissued session accepted by another process")
+	}
+}

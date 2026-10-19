@@ -6,6 +6,7 @@
 - Preserve protocol v2, identity, Keychain, LaunchAgent, database, history/cache and OSS/crypto namespaces for in-place mixed-version upgrades.
 - Add neutral AGENT_LINK_* environment settings with legacy fallback and a documented Git/source upgrade and retained rollback snapshots.
 - Add bounded MCP stdio tools: read-only by default, explicit messaging/task and file opt-ins, fixed per-process session ownership; no command executor or automatic wakeup.
+- Allocate independent named worker sessions for separate chats sharing one MCP process, while retaining explicit owner resumption.
 - Document Codex, Claude Code and DeepSeek Harness integration and extend compatibility/MCP tests.
 
 

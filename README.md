@@ -38,7 +38,7 @@ git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.1 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
@@ -76,7 +76,7 @@ agent-link mcp --harness deepseek-harness
 agent-link mcp --harness claude-code --allow-write
 ```
 
-Each MCP process gets a unique session; read it with `agent_link_context`. A reconnecting worker holding a lease can explicitly retain its session with `--session`, but separate active windows must never share one lease owner. No shell, daemon-management, credential-configuration or pairing-accept MCP tools are exposed. MCP uses newline-delimited JSON-RPC stdio; calls are serialized and inbox waits are bounded to 30 seconds. It has no HTTP listener.
+Each MCP process gets a default session. For shared hosts such as DeepSeek desktop, each chat calls `agent_link_worker_new` once and passes its returned session on subsequent tools; `agent_link_context` reports it. A reconnecting worker holding a lease can explicitly retain its session with `--session`, but separate active windows must never share one lease owner. No shell, daemon-management, credential-configuration or pairing-accept MCP tools are exposed. MCP uses newline-delimited JSON-RPC stdio; calls are serialized and inbox waits are bounded to 30 seconds. It has no HTTP listener.
 
 ## CLI cooperation
 
@@ -109,7 +109,7 @@ Claim the task's own `message.id`, never `reply_to`. Immediately acknowledge a c
 go test ./...
 go test -race ./...
 go vet ./...
-sh scripts/package.sh v0.2.0-rc.1
+sh scripts/package.sh v0.2.0-rc.2
 ```
 
 On a machine with a Go policy wrapper, run Go commands through that wrapper (for example `~/.codex/bin/codex-go test ./...`). Package/source scripts detect it automatically and accept `AGENT_LINK_GO`. Package artifacts use stable `dist/` filenames for arm64/amd64, including legacy filenames. No model API client or additional Go dependency is introduced by MCP.

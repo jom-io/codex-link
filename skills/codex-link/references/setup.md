@@ -12,7 +12,7 @@ Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it 
 git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
-AGENT_LINK_VERSION=v0.2.0-rc.1 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
 ```
 
 Requires Go 1.25+. A source ZIP requires extraction and the same build step. Do not assume an untagged branch is a stable release.
