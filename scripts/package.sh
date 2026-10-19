@@ -7,7 +7,11 @@ out="$root/dist"
 mkdir -p "$out"
 go_cmd="${AGENT_LINK_GO:-$HOME/.codex/bin/codex-go}"
 if [ ! -x "$go_cmd" ]; then go_cmd=go; fi
-export GOCACHE="${GOCACHE:-/private/tmp/codex-go-build-cache}"
+# macOS policy uses one shared cache. Linux CI retains Go/setup-go's own
+# shared cache rather than trying to create the macOS-only /private path.
+if [ "$(uname -s)" = Darwin ]; then
+  export GOCACHE="${GOCACHE:-/private/tmp/codex-go-build-cache}"
+fi
 for arch in arm64 amd64; do
   if [ "$(basename "$go_cmd")" = codex-go ]; then
     (cd "$root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" "$go_cmd" binary ./cmd/agent-link -- -buildvcs=false -trimpath -ldflags "-s -w -X github.com/jom-io/codex-link/internal/link.Version=$version")

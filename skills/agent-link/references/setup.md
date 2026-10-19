@@ -9,7 +9,7 @@ Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it 
 ## Source fallback
 
 ```sh
-git clone https://github.com/jom-io/codex-link.git
+git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 AGENT_LINK_VERSION=v0.2.0-rc.1 sh scripts/install.sh --source "$PWD"
@@ -27,7 +27,7 @@ The first provider implementation is Aliyun OSS. Use an HTTPS regional endpoint,
 
 Start with `agent-link daemon start`. Inspect `status`, `peers`, and the local `daemon.log`. Keychain must be accessible in the logged-in user's session. On reconfiguration, `daemon stop`, import YAML again, then `daemon start`.
 
-Rollback: stop the daemon, restore `~/.local/bin/agent-link.previous` and the matching `.previous` skill directory, then start. `scripts/uninstall.sh` removes the application and LaunchAgent but preserves data and credentials.
+Rollback: stop the daemon, restore both binaries and matching skills from the installer-reported `$BIN_DIR/.agent-link-backups/<old-binary-sha256>/` snapshot, then start. `scripts/uninstall.sh` removes the commands and LaunchAgent but preserves skills, backups, history, cached files and credentials.
 
 For a complete second-Mac Chinese walkthrough, read https://github.com/jom-io/codex-link/blob/master/docs/installation.zh-CN.md . The guide may contain documentation updates newer than the pinned binary release.
 
