@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -128,6 +129,21 @@ func TestFileLockCancellationAndRelease(t *testing.T) {
 		}
 		waiter <- e
 	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		locks.mu.Lock()
+		waiting := locks.entries["same-file"].users == 2
+		locks.mu.Unlock()
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			unlock()
+			t.Fatal("same-file waiter did not enter the lock queue")
+		}
+		runtime.Gosched()
+	}
 	other, err := locks.acquire(context.Background(), "different-file")
 	if err != nil {
 		t.Fatal(err)
