@@ -51,6 +51,15 @@ upgrading/reloading the module; it also refreshes its local helper modules.
 Check the installed version's profile composition and native API before editing
 a live profile. Do not print full composed configurations or HTTP auth tokens.
 
+DeepSeek Harness desktop 0.2.1-rc.2 does not watch external edits to
+`cordis.patch.yml`. The first binding needs profile reconciliation, triggered by
+a save through the application's settings editor or an explicitly approved app
+restart. A successful YAML edit or CLI installation alone does not load the
+plugin. Prefer saving the existing settings through the native interface, and
+verify listener readiness before testing. Preserve other settings and active
+chats; module hot reload after loading is separate from loading a new profile
+entry.
+
 The plugin uses in-process `sessionController` calls. It checks the bound
 Agent's actual state instead of inferring idleness from an old pulse. New
 notifications wait while that Agent runs. Native `mode: queue` also handles a

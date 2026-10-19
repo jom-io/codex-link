@@ -16,7 +16,10 @@ UI fallback is explicitly configured and never handles approvals.
    other plugins and MCP file permissions. Full patch/protocol documentation:
    https://github.com/jom-io/codex-link/blob/codex/agent-link-multi-harness/docs/wake.md
 4. Validate the actual installed host API/profile composition without exposing
-   full configuration or HTTP tokens. Require the listener-ready log, then let
+   full configuration or HTTP tokens. Desktop 0.2.1-rc.2 does not watch external
+   patch edits: trigger reconciliation through the native settings save before
+   expecting a listener. Preserve existing values and other active chats; do not
+   silently restart the application. Require the listener-ready log, then let
    the model finish and send a fresh non-secret test task. A genuine model
    claim/result without another human prompt proves wake; a socket ACK alone
    does not. Same-device tests must report `route: local`.
