@@ -18,7 +18,9 @@ export function createDeepSeekHost(controller, config) {
       const result = await controller.resolveAgent(sessionId);
       signal?.throwIfAborted();
       if (!result || result.error) throw new Error('Bound DeepSeek chat could not be resolved');
-      const agent = result.agent;
+      // SessionController returns Agent directly; older/internal resolvers may
+      // wrap it. Keep the native identity check for either API shape.
+      const agent = result.agent ?? result;
       if (!agent || agent.id !== sessionId) throw new Error('DeepSeek returned a different native chat');
       if (agent.status === 'running') return 'running';
       if (agent.status === 'idle') return 'idle';
