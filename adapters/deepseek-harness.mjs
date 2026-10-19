@@ -5,7 +5,9 @@ const { startNativeBridge, UnsupportedNativeAPI } = await import(new URL('./nati
 const { inspectMacOSChat, submitMacOSChat, validateUI } = await import(new URL('./macos-ui.mjs' + revision, import.meta.url));
 
 export const name = 'agent-link-wake';
-export const inject = { optional: ['sessionController'] };
+// Cordis 4 maps object keys to service names. A legacy { optional: [...] }
+// declaration would wait forever for a service literally named "optional".
+export const inject = ['sessionController'];
 
 export function createDeepSeekHost(controller, config) {
   const nativeAvailable = typeof controller?.resolveAgent === 'function' && typeof controller?.prompt === 'function';
