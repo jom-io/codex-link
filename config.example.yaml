@@ -1,9 +1,9 @@
-# codex-link 首次安装配置模板 / First-run configuration template
+# agent-link 首次安装配置模板 / First-run configuration template
 # 填写 config.local.yaml；该文件已加入 .gitignore，切勿上传或发到聊天里。
 # Edit config.local.yaml; it is gitignored. Never commit or paste real credentials.
 # 两台 Mac 使用相同 workspace；首次联系时两边点击确认自动配对，name 应不同。
 # Both Macs share a workspace; confirm the first pairing on both devices. Names differ.
-# 导入：codex-link init --config /absolute/path/config.local.yaml
+# 导入：agent-link init --config /absolute/path/config.local.yaml
 # 导入后凭据进入 macOS Keychain，普通 config.json 不包含凭据。
 
 name: home-mac                    # 另一台可用 office-mac / Other Mac: office-mac

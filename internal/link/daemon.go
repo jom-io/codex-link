@@ -512,7 +512,7 @@ func Call(ctx context.Context, home, op string, a APIRequest) (json.RawMessage, 
 	client := &http.Client{Transport: transport}
 	res, e := client.Do(req)
 	if e != nil {
-		return nil, errors.New("daemon unavailable; run codex-link daemon start (or daemon run)")
+		return nil, errors.New("daemon unavailable; run agent-link daemon start (or daemon run)")
 	}
 	defer res.Body.Close()
 	var out json.RawMessage
