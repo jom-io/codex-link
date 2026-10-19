@@ -70,3 +70,26 @@ func TestConfigRejectsUnsafeDefaults(t *testing.T) {
 		t.Fatal("plaintext OSS accepted")
 	}
 }
+
+func TestNeutralEnvironmentPreservesLegacyStorage(t *testing.T) {
+	t.Setenv("AGENT_LINK_HOME", "")
+	t.Setenv("CODEX_LINK_HOME", "")
+	legacyDefault := DefaultHome()
+	if filepath.Base(legacyDefault) != "codex-link" {
+		t.Fatal("rename split existing data/identity", legacyDefault)
+	}
+	t.Setenv("CODEX_LINK_HOME", "/legacy-socket-home")
+	// Empty neutral variable is explicit, so it suppresses the legacy override.
+	if DefaultHome() != legacyDefault {
+		t.Fatal("empty neutral override did not retain default")
+	}
+	t.Setenv("AGENT_LINK_HOME", "/neutral-socket-home")
+	if DefaultHome() != "/neutral-socket-home" {
+		t.Fatal("neutral home did not take precedence")
+	}
+	t.Setenv("CODEX_LINK_REDIS_PASSWORD", "legacy-test")
+	t.Setenv("AGENT_LINK_REDIS_PASSWORD", "neutral-test")
+	if Environment("REDIS_PASSWORD") != "neutral-test" {
+		t.Fatal("credential environment precedence")
+	}
+}

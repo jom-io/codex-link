@@ -5,17 +5,27 @@ version="${1:-dev}"
 case "$version" in *[!a-zA-Z0-9._-]*|'') echo "Invalid version" >&2; exit 1 ;; esac
 out="$root/dist"
 mkdir -p "$out"
+go_cmd="${AGENT_LINK_GO:-$HOME/.codex/bin/codex-go}"
+if [ ! -x "$go_cmd" ]; then go_cmd=go; fi
+export GOCACHE="${GOCACHE:-/private/tmp/codex-go-build-cache}"
 for arch in arm64 amd64; do
+  if [ "$(basename "$go_cmd")" = codex-go ]; then
+    (cd "$root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" "$go_cmd" binary ./cmd/agent-link -- -buildvcs=false -trimpath -ldflags "-s -w -X github.com/jom-io/codex-link/internal/link.Version=$version")
+    built=$(cd "$root" && GOOS=darwin GOARCH="$arch" "$go_cmd" output-path ./cmd/agent-link)
+  else
+    mkdir -p "$out/build/darwin_$arch"
+    built="$out/build/darwin_$arch/agent-link"
+    (cd "$root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" "$go_cmd" build -buildvcs=false -trimpath -ldflags "-s -w -X github.com/jom-io/codex-link/internal/link.Version=$version" -o "$built" ./cmd/agent-link)
+  fi
   stage=$(mktemp -d)
-  (cd "$root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -buildvcs=false -trimpath -ldflags "-s -w -X github.com/jom-io/codex-link/internal/link.Version=$version" -o "$stage/codex-link" ./cmd/codex-link)
-  cp -R "$root/skills" "$stage/skills"
-  cp -R "$root/scripts" "$stage/scripts"
-  cp -R "$root/docs" "$stage/docs"
-  cp -R "$root/third_party" "$stage/third_party"
-  cp "$root/THIRD_PARTY_NOTICES.md" "$stage/"
-  cp "$root/LICENSE" "$root/README.md" "$root/README.zh-CN.md" "$root/CHANGELOG.md" "$root/config.example.yaml" "$stage/"
-  COPYFILE_DISABLE=1 tar -czf "$out/codex-link_darwin_${arch}.tar.gz" -C "$stage" codex-link skills scripts docs third_party THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml
+  cp "$built" "$stage/agent-link"
+  cp "$built" "$stage/codex-link"
+  for dir in skills scripts docs third_party; do cp -R "$root/$dir" "$stage/$dir"; done
+  for file in THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml; do cp "$root/$file" "$stage/"; done
+  COPYFILE_DISABLE=1 tar -czf "$out/agent-link_darwin_${arch}.tar.gz" -C "$stage" agent-link codex-link skills scripts docs third_party THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml
+  # Old release URLs and upgrade scripts may continue selecting the legacy name.
+  cp "$out/agent-link_darwin_${arch}.tar.gz" "$out/codex-link_darwin_${arch}.tar.gz"
   rm -rf "$stage"
 done
-(cd "$out" && shasum -a 256 codex-link_darwin_arm64.tar.gz codex-link_darwin_amd64.tar.gz > checksums.txt)
+(cd "$out" && shasum -a 256 agent-link_darwin_arm64.tar.gz agent-link_darwin_amd64.tar.gz codex-link_darwin_arm64.tar.gz codex-link_darwin_amd64.tar.gz > checksums.txt)
 printf 'Release artifacts: %s\n' "$out"

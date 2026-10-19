@@ -211,7 +211,7 @@ func (s *Store) Claim(ctx context.Context, id, owner string, seconds int) error 
 			return errors.New("task is already completed")
 		}
 		if r.Status == "claimed" && r.LeaseUntil > now && r.Owner != owner {
-			return fmt.Errorf("task is claimed by session %q until %s; use a unique --session for each Codex window, or wait for the lease to expire", r.Owner, time.Unix(r.LeaseUntil, 0).UTC().Format(time.RFC3339))
+			return fmt.Errorf("task is claimed by session %q until %s; use a unique --session for each agent window, or wait for the lease to expire", r.Owner, time.Unix(r.LeaseUntil, 0).UTC().Format(time.RFC3339))
 		}
 		return errors.New("task could not be claimed; refresh `task list` and use its exact message.id")
 	}

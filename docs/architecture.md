@@ -1,4 +1,4 @@
-# Architecture and protocol v2
+# agent-link architecture and protocol v2
 
 A single Go binary provides a transient CLI and a per-user daemon. CLI calls use JSON over a 0600 Unix socket, with no public HTTP listener. A filesystem lock prevents duplicate daemons. SQLite uses WAL and transactional updates. All windows under one macOS user share the store/cache; session aliases route messages but are not a sandbox.
 
@@ -33,3 +33,7 @@ Files use a domain-separated key derived from the confirmed pair. Each 64 KiB AE
 LaunchAgent runs after user login; Keychain must be available. Native confirmation uses macOS scripting additions, not an active Codex chat. `pairing_headless` disables dialogs and requires an explicit human-authorized local acceptance command. Connections retry; idle receiving uses blocking XREAD. Shutdown cancels requests, closes Redis, waits for workers and closes SQLite.
 
 Cloud operators see names/public keys, routing, timestamps, object paths and sizes; they can deny service or replay ciphertext. Local history/cache rely on user permissions and disk security, not SQLite encryption. Configuration changes preserve identity; lost identity keys cannot be silently replaced. No idle Codex wakeup, automatic STS refresh or remote command executor is present.
+
+## Harness adapters (v0.2)
+
+The CLI lives in internal/cli and is shared by cmd/agent-link and the cmd/codex-link compatibility entry. The MCP stdio adapter forwards an explicit subset of operations to the same private Unix socket. It does not spawn an agent or accept pairings. Default tools are read-only; sending/claiming/completing tasks and file tools require separate startup opt-ins. The adapter fixes one session per process and rejects a caller-supplied session field. The local harness still decides whether a received request is authorized. Existing protocol/crypto domains, data path and service identifiers deliberately retain their legacy spelling; the cosmetic rename cannot create a second daemon or identity.

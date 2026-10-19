@@ -46,8 +46,19 @@ type Secrets struct {
 	SecurityToken   string `json:"security_token,omitempty" yaml:"security_token,omitempty"`
 }
 
+// Environment accepts the neutral prefix first, including an explicitly empty value.
+// Legacy names remain available for existing installations and automation.
+func Environment(name string) string {
+	if s, ok := os.LookupEnv("AGENT_LINK_" + name); ok {
+		return s
+	}
+	return os.Getenv("CODEX_LINK_" + name)
+}
+
+// DefaultHome intentionally preserves the legacy storage location. A rename must
+// not create a second identity, database, pairing set or running daemon.
 func DefaultHome() string {
-	if s := os.Getenv("CODEX_LINK_HOME"); s != "" {
+	if s := Environment("HOME"); s != "" {
 		return s
 	}
 	h, _ := os.UserHomeDir()
@@ -61,7 +72,7 @@ func LoadConfig(home string) (Config, error) {
 	var c Config
 	b, e := os.ReadFile(ConfigPath(home))
 	if e != nil {
-		return c, fmt.Errorf("run codex-link init first: %w", e)
+		return c, fmt.Errorf("run agent-link init first: %w", e)
 	}
 	if e = json.Unmarshal(b, &c); e != nil {
 		return c, e

@@ -17,5 +17,5 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./...
       - run: go test -race ./...
-      - run: sh -n scripts/install.sh scripts/uninstall.sh scripts/package.sh skills/codex-link/scripts/install.sh
+      - run: sh -n scripts/install.sh scripts/uninstall.sh scripts/package.sh skills/agent-link/scripts/install.sh skills/codex-link/scripts/install.sh
       - run: sh scripts/package.sh ci
