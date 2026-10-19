@@ -15,13 +15,15 @@ Encrypted messaging, file transfer and task coordination between agent harnesses
 - Aliyun OSS encrypted files, bounded-memory transfer and SHA-256 verification.
 - macOS Keychain, private Unix socket, LaunchAgent and generic harness Skill.
 - MCP stdio tools, read-only by default; opt-in cooperation and file operations.
+- Automatic delivery: shared-daemon local inbox, authenticated private IPv4 LAN,
+  then Redis/OSS fallback. CLI and MCP use the same routing.
 
 ```text
 Codex / Claude Code / DeepSeek Harness
                  | CLI or MCP stdio + shared Skill
            agent-link local daemon
                  | SQLite + Keychain
-        Redis Streams + private Aliyun OSS
+        Local inbox / encrypted LAN / Redis + OSS fallback
                  | encrypted pairwise transport
            agent-link peer daemon
                  | another active harness
@@ -38,7 +40,7 @@ git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.3 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
@@ -46,7 +48,7 @@ AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
 
 For subsequent upgrades use `git fetch origin` and `git merge --ff-only origin/codex/agent-link-multi-harness` in a clean checkout. Do not discard local changes. The installer uses `~/.codex/bin/codex-go` when present, or Go otherwise; `AGENT_LINK_GO` can select the executable. Builds use a shared Go cache and stable output paths. Existing managed link daemons are stopped only for replacement, then restarted. Other services are untouched. Validate device ID, paired peer and history after upgrading. Do **not** run `init` again on an existing installation.
 
-Each installer keeps rollback binaries/skills in `$BIN_DIR/.agent-link-backups/<old-binary-sha256>/`. To roll back, stop the link daemon, restore the saved binaries and matching skills from that snapshot, and start the link daemon. History, cached files and Keychain entries are never removed by upgrade. On an installation/restart failure, inspect the reported error and use the retained snapshot; there is no automatic rollback after a partial install.
+Each installer keeps rollback binaries/skills in `$BIN_DIR/.agent-link-backups/<old-binary-sha256>/`. Before reverting to a version without routing, let pending file sends finish: older daemons cannot upload the new staged-file outbox. Stop the link daemon, restore the saved binaries and matching skills from that snapshot, and start it. History, cached files and Keychain entries are never removed by upgrade. On an installation/restart failure, inspect the reported error and use the retained snapshot; there is no automatic rollback after a partial install.
 
 Release packages include both command names and both skills. When a v0.2 release exists, use its inspected `scripts/install.sh`; `AGENT_LINK_VERSION` pins the version. Existing `CODEX_LINK_VERSION`, `CODEX_LINK_BIN_DIR` and `CODEX_LINK_SKILL_DIR` installer settings are accepted. A verified extracted package can also be installed with `sh scripts/install.sh --package /absolute/package`.
 
@@ -64,6 +66,36 @@ agent-link peers
 Each Mac automatically creates Ed25519/X25519 identities in Keychain. First contact displays a six-digit code on both Macs; compare the codes and intended devices before confirming on each. New devices do not inherit trust. Files queued before pairing must be resent after approval. A received task is never permission to execute it.
 
 Public Redis should use TLS. Explicitly opting into plaintext Redis still exposes the Redis password in transit, despite payload encryption. See [infrastructure](docs/infrastructure.md), [architecture/security boundaries](docs/architecture.md) and the [detailed setup guide](docs/installation.zh-CN.md).
+
+## Automatic routing
+
+The daemon chooses the route without changing CLI/MCP calls:
+
+1. **Local:** destination `self`, this device's name or ID uses the same per-user
+   daemon's durable inbox, without pairing to itself or contacting Redis/OSS.
+   Use `--to-session` for the other chat's unique session.
+2. **LAN:** confirmed devices try an encrypted direct push on a reachable private
+   IPv4 subnet. A separate signed endpoint record in the existing Redis directory
+   provides discovery; locally cached records work during Redis outages while
+   their address remains reachable. Initial discovery/pairing still needs Redis.
+3. **Cloud:** failed/unavailable LAN or an older peer uses the existing Redis
+   stream. Files upload to OSS only on fallback. An offline peer can catch up
+   within cloud retention, as before.
+
+`agent-link get MESSAGE_ID` includes `route: local|lan|cloud` once routed; status
+also includes `routing` and `lan_listening`. Files are snapshotted encrypted
+before enqueueing, retry without rereading a mutable user path, and are verified
+and cached by a LAN receiver before it acknowledges delivery. `file fetch` uses
+the verified cache first. A lost ACK and cloud retry reuse the same message ID.
+
+`routing: auto` is the default for existing configurations without rewriting them.
+It opens only an encrypted-data delivery endpoint on an ephemeral TCP port;
+the administration API stays on the private Unix socket. Candidates must be
+numeric IPs on a private local subnet and must authenticate as the pinned peer.
+There is no multicast discovery, public-IP setup, NAT traversal or VPN installer.
+IPv6-only/isolated Wi-Fi networks fall back to cloud. `routing: cloud` disables
+the LAN listener and attempts, while same-daemon delivery remains local. See
+[routing design and acceptance](docs/routing.md).
 
 ## Harness integration
 
@@ -109,7 +141,7 @@ Claim the task's own `message.id`, never `reply_to`. Immediately acknowledge a c
 go test ./...
 go test -race ./...
 go vet ./...
-sh scripts/package.sh v0.2.0-rc.2
+sh scripts/package.sh v0.2.0-rc.3
 ```
 
 On a machine with a Go policy wrapper, run Go commands through that wrapper (for example `~/.codex/bin/codex-go test ./...`). Package/source scripts detect it automatically and accept `AGENT_LINK_GO`. Package artifacts use stable `dist/` filenames for arm64/amd64, including legacy filenames. No model API client or additional Go dependency is introduced by MCP.

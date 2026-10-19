@@ -20,6 +20,7 @@ type Config struct {
 	DeviceID        string `json:"device_id" yaml:"device_id"`
 	Name            string `json:"name" yaml:"name"`
 	Workspace       string `json:"workspace" yaml:"workspace"`
+	Routing         string `json:"routing,omitempty" yaml:"routing,omitempty"`
 	Redis           struct {
 		Address       string `json:"address" yaml:"address"`
 		Username      string `json:"username,omitempty" yaml:"username,omitempty"`
@@ -81,6 +82,9 @@ func LoadConfig(home string) (Config, error) {
 	return c, c.Validate()
 }
 func (c *Config) Defaults() {
+	if c.Routing == "" {
+		c.Routing = "auto"
+	}
 	if c.DeviceID == "" {
 		c.DeviceID = NewID()
 	}
@@ -104,6 +108,9 @@ func (c *Config) Defaults() {
 	}
 }
 func (c Config) Validate() error {
+	if c.Routing != "" && c.Routing != "auto" && c.Routing != "cloud" {
+		return errors.New("routing must be auto or cloud")
+	}
 	if !ValidLabel(c.DeviceID) || !ValidLabel(c.Name) || !ValidLabel(c.Workspace) {
 		return errors.New("device ID, name and workspace must contain 1–64 ASCII letters, digits, '.', '_' or '-'")
 	}

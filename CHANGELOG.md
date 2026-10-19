@@ -2,6 +2,12 @@
 
 ## v0.2.0 (unreleased)
 
+- Automatic shared-daemon local delivery, authenticated private IPv4 direct
+  delivery and existing Redis/OSS fallback for both CLI and MCP. Signed endpoint
+  discovery reuses Redis and local cache; no new discovery dependency.
+- Immutable encrypted file staging, verified receiver cache before LAN ACK,
+  lost-ACK fallback deduplication, durable upload retries and route diagnostics.
+
 - Rename the product/CLI to agent-link, with a shared codex-link compatibility entry and generic harness Skill.
 - Preserve protocol v2, identity, Keychain, LaunchAgent, database, history/cache and OSS/crypto namespaces for in-place mixed-version upgrades.
 - Add neutral AGENT_LINK_* environment settings with legacy fallback and a documented Git/source upgrade and retained rollback snapshots.

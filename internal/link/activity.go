@@ -24,7 +24,7 @@ type ActivityView struct {
 	AgeSeconds int64  `json:"age_seconds"`
 }
 
-func (s *Store) SaveActivity(ctx context.Context, device string, a Activity) error {
+func (a Activity) Validate() error {
 	if !ValidLabel(a.Worker) || !ValidLabel(a.TaskID) || a.SeenAt.IsZero() || len(a.Stage) > 1024 {
 		return errors.New("invalid worker activity")
 	}
@@ -32,6 +32,13 @@ func (s *Store) SaveActivity(ctx context.Context, device string, a Activity) err
 	case "working", "waiting_user", "blocked", "completed", "stopped", "claimed":
 	default:
 		return errors.New("invalid worker state")
+	}
+	return nil
+}
+
+func (s *Store) SaveActivity(ctx context.Context, device string, a Activity) error {
+	if e := a.Validate(); e != nil {
+		return e
 	}
 	b, _ := json.Marshal(a)
 	_, e := s.db.ExecContext(ctx, `INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE json_extract(excluded.value,'$.seen_at')>=json_extract(metadata.value,'$.seen_at')`, "activity:"+device+":"+a.TaskID, string(b))

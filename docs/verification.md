@@ -40,3 +40,23 @@ The user authorized using the existing plaintext Redis endpoint. Local configura
 ## v0.2 acceptance
 
 Run Go tests/race/vet using the local policy wrapper when installed. MCP tests enforce read-only default, opt-in files, session spoof rejection, bounded input validation, init/notification/error framing and named-worker uniqueness. Test the installer in an isolated prefix with `AGENT_LINK_NO_SERVICE=1` so it cannot stop the user's real daemon. Verify both command aliases and snapshot preservation. On real upgrades retain device ID, pair and SQLite history, then verify mixed-version communication before upgrading the second Mac. Finally use the real DeepSeek Harness MCP client/model, not just a hand-written JSON probe, for an authorized task/result exchange.
+
+The dated v0.1 records above are historical. On 2026-10-19 the v0.2 harness work
+passed local test/race/vet and CI, both actual Mac source upgrades, preservation
+comparisons, real DeepSeek desktop task exchange, and an explicitly authorized
+247-byte MCP file roundtrip with independent exact-byte/SHA-256 comparison.
+Temporary DeepSeek file permissions were then revoked and verified.
+
+## Automatic routing acceptance
+
+Use the source's directed tests on both Macs:
+
+```sh
+GOCACHE=/private/tmp/codex-go-build-cache ~/.codex/bin/codex-go test ./internal/link -run 'Test(LocalTask|DirectTask|DirectOnPrivate|LostDirect|DirectDiscovery|DirectRejects|StagedCloud)' -count=1 -v
+```
+
+On a host without that policy wrapper, use its existing Go executable and the
+same shared GOCACHE. `TestDirectOnPrivateInterface` must report PASS to establish
+private-interface coverage; SKIP is not a direct-network acceptance. These tests
+exercise two isolated identities on one host, not two physical Macs on one LAN.
+See [routing acceptance](routing.md#acceptance) for invariants and real-Mac checks.

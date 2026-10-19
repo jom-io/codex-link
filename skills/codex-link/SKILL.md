@@ -7,7 +7,7 @@ description: Install and configure agent-link, exchange messages and files with 
 
 Prefer `agent-link` for new integrations. This legacy skill describes the same protocol. Works with Codex, Claude Code and other harnesses that expose a shell or MCP tools. A model provider alone is not a harness. See [harness integration](references/harnesses.md) for MCP and project instruction setup.
 
-Use the agent-link CLI to cooperate with another Mac. All sessions under one macOS user share a daemon, local history and a file cache. The application transports tasks; it never executes received commands by itself.
+Use the agent-link CLI to cooperate with another Mac or a session sharing this daemon. All sessions under one macOS user share a daemon, local history and a file cache. The application transports tasks; it never executes received commands by itself.
 
 ## Install and initialize
 
@@ -23,6 +23,10 @@ Use the agent-link CLI to cooperate with another Mac. All sessions under one mac
 Send normally. If the result is `pairing_pending`, the application displays a native dialog on each Mac. Tell the user to compare the six-digit code on both Macs and confirm the intended devices. Do not click confirmation or call `pair accept` on the human's behalf without explicit authorization. Only one approval is insufficient. Pending text/task messages send automatically once both approve.
 
 `pair list` shows pending/confirmed pairs. For intentionally headless use, request explicit human confirmation and call `pair accept REQUEST_ID --code CODE` on that local device; rejection uses `pair reject`. New devices require their own pairwise confirmations. Do not infer trust from a name or Redis access alone. If file send returns pairing_pending, wait for confirmation and retry that file send; no file content is uploaded before pairing.
+
+## Automatic routing (v0.2.0-rc.3+)
+
+CLI and MCP share local → confirmed private IPv4 LAN → Redis/OSS fallback routing. To reach another chat on this device use `--to self` (or this device name/ID) and its unique `--to-session`; no self-pairing is needed. `get`/inbox records report `route: local|lan|cloud`. A local send has one shared inbox row, so it becomes `received` rather than a separate outgoing `delivered` row. Task claims/completions still apply. Redis disconnection does not prevent local or reachable, cached LAN delivery. Initial LAN endpoint discovery/pairing uses Redis; do not claim zero-cloud discovery. Files are encrypted snapshots and queued asynchronously; only receipt/cache verification establishes arrival. MCP file permission gates are unchanged.
 
 ## MCP sessions
 
@@ -75,7 +79,7 @@ At the start of each new work window run `agent-link worker new --agent NAME` on
 
 Claiming or renewing automatically sends an encrypted activity update. During a claimed task call `worker pulse TASK_ID --session UNIQUE_SESSION --state working --stage "short non-sensitive stage"` at most 60 seconds apart when the window can actively poll. Use `waiting_user`, `blocked`, or `stopped` as appropriate. Pulse requires your active lease but does not renew it; renew explicitly with `task claim` before expiry. Never launch a detached infinite pulse loop: it would make a closed agent window appear alive. Stage text must contain no credentials or sensitive output.
 
-`workers` and `task status TASK_ID` show the latest locally known window activity, including age and lease expiry. No activity row means the peer/worker has not reported yet (possibly an older version), not proof of inactivity. Over 90 seconds without a worker call is `stale`; over 180 seconds is `unresponsive`. These are suspicion states and never authorize duplicate execution. The daemon sends transition notifications while it is alive; a stopped daemon cannot announce its own disappearance. `peers` independently reports service age and `possibly_offline` after 90 seconds. If Redis is disconnected, cached activity is unconfirmed: check `status` and wait for reconnection before drawing conclusions. `task complete` reports completion. Remote process liveness and automatic Codex awakening are not provided by this version.
+`workers` and `task status TASK_ID` show the latest locally known window activity, including age and lease expiry. No activity row means the peer/worker has not reported yet (possibly an older version), not proof of inactivity. Over 90 seconds without a worker call is `stale`; over 180 seconds is `unresponsive`. These are suspicion states and never authorize duplicate execution. The daemon sends transition notifications while it is alive; a stopped daemon cannot announce its own disappearance. `peers` independently reports service age and `possibly_offline` after 90 seconds. If Redis is disconnected, cached remote activity is unconfirmed: check `status` and the actual delivery route before drawing conclusions; local and reachable cached LAN routes can still work. `task complete` reports completion. Remote process liveness and automatic Codex awakening are not provided by this version.
 
 ## Local agent identity
 

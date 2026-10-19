@@ -24,6 +24,7 @@ type Daemon struct {
 	Store     *Store
 	Transport *Transport
 	Files     *Files
+	Direct    *directRouter
 	mu        sync.Mutex
 	changed   chan struct{}
 	fileMu    sync.Mutex
@@ -83,71 +84,16 @@ func (d *Daemon) receive(ctx context.Context) {
 				d.notify()
 				continue
 			}
-			if m.Activity != nil {
-				if m.Kind != "progress" || m.Activity.TaskID != m.ReplyTo || m.Activity.Worker != m.Session {
-					log.Print("rejected invalid activity")
-					continue
-				}
-				if e := d.Store.SaveActivity(ctx, m.From, *m.Activity); e != nil {
-					log.Print("rejected invalid activity")
-					continue
-				}
-			}
 			if m.Kind != "receipt" {
 				v := d.base(m.From, "receipt")
 				v.ReplyTo = m.ID
 				receipt = &v
 			}
-			if e = d.Store.Accept(ctx, &m, r.ID, receipt); e != nil {
+			if e = d.acceptIncoming(ctx, m, r.ID, receipt, "cloud"); e != nil {
 				log.Print("message persistence failed; will retry")
 				break
 			}
 			d.notify()
-		}
-	}
-}
-func (d *Daemon) send(ctx context.Context) {
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	heart := time.NewTicker(30 * time.Second)
-	defer heart.Stop()
-	heartbeat := func() {
-		c, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		e := d.Transport.Heartbeat(c)
-		d.setConnected(e == nil)
-	}
-	heartbeat()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-heart.C:
-			heartbeat()
-			d.checkActivity(ctx)
-		case <-tick.C:
-			rs, e := d.Store.Pending(ctx)
-			if e != nil {
-				log.Print("outbox read failed")
-				continue
-			}
-			for _, r := range rs {
-				c, cancel := context.WithTimeout(ctx, 10*time.Second)
-				e = d.Transport.Publish(c, r.Message)
-				cancel()
-				if errors.Is(e, ErrNotPaired) {
-					continue
-				}
-				if e != nil {
-					d.setConnected(false)
-					break
-				}
-				d.setConnected(true)
-				if e = d.Store.MarkSent(ctx, r.Message.ID); e != nil {
-					log.Print("outbox state persistence failed")
-					break
-				}
-			}
 		}
 	}
 }
@@ -205,13 +151,20 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 	defer transport.Close()
 	transport.store = store
 	files, _ := NewFiles(c, s, home)
+	if files == nil {
+		files = newLocalFiles(c, home)
+	}
 	d := &Daemon{Config: c, Home: home, Store: store, Transport: transport, Files: files, changed: make(chan struct{})}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	stopDirect := startDirect(runCtx, d)
+	defer stopDirect()
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(5)
 	go func() { defer wg.Done(); d.receive(runCtx) }()
 	go func() { defer wg.Done(); d.send(runCtx) }()
+	go func() { defer wg.Done(); d.sendFiles(runCtx) }()
+	go func() { defer wg.Done(); d.heartbeat(runCtx) }()
 	go func() { defer wg.Done(); d.prompts(runCtx) }()
 	server := &http.Server{Handler: d.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan error, 1)
@@ -306,13 +259,32 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		return d.Store.Activities(ctx, a.ID)
 	case "/v1/status":
 		n, e := d.Store.MaxSeq(ctx)
-		return map[string]any{"version": Version, "protocol": ProtocolVersion, "device_id": d.Config.DeviceID, "name": d.Config.Name, "workspace": d.Config.Workspace, "redis_connected": d.isConnected(), "oss_configured": d.Files != nil, "last_seq": n}, e
+		return map[string]any{"version": Version, "protocol": ProtocolVersion, "device_id": d.Config.DeviceID, "name": d.Config.Name, "workspace": d.Config.Workspace, "redis_connected": d.isConnected(), "oss_configured": d.Files != nil && d.Files.bucket != nil, "routing": d.Config.Routing, "lan_listening": d.Direct != nil, "last_seq": n}, e
 	case "/v1/peers":
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		ps, e := d.Transport.Peers(c)
 		if e != nil {
-			return nil, e
+			// Redis health does not determine whether local/cached LAN routes work.
+			pairs, err := d.Store.Pairs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, pair := range pairs {
+				if pair.Ready() {
+					ps = append(ps, pair.Peer)
+				}
+			}
+		}
+		self := d.Transport.LocalPeer()
+		seenSelf := false
+		for _, peer := range ps {
+			if peer.ID == self.ID {
+				seenSelf = true
+			}
+		}
+		if !seenSelf {
+			ps = append(ps, self)
 		}
 		out := []map[string]any{}
 		for _, p := range ps {
@@ -325,7 +297,10 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			}
 			item["age_seconds"] = age
 			item["health"] = "online"
-			if age > 90 {
+			item["self"] = p.ID == d.Config.DeviceID
+			if e != nil && p.ID != d.Config.DeviceID {
+				item["health"] = "unconfirmed"
+			} else if age > 90 {
 				item["health"] = "possibly_offline"
 			}
 			out = append(out, item)
@@ -366,37 +341,45 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		m.ToSession = a.ToSession
 		m.Conversation = a.Conversation
 		m.ReplyTo = a.ReplyTo
-		pairCtx, pairCancel := context.WithTimeout(ctx, 10*time.Second)
-		pair, e := d.ensurePair(pairCtx, to)
-		pairCancel()
-		if e != nil {
-			return nil, e
-		}
-		if kind == "file" {
-			if !pair.Ready() {
-				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
-			}
-			if d.Files == nil {
-				return nil, errors.New("OSS is not configured")
-			}
-			d.fileMu.Lock()
-			key, keyErr := d.Transport.PairKey(ctx, to)
-			if keyErr != nil {
-				d.fileMu.Unlock()
-				return nil, keyErr
-			}
-			m.File, e = d.Files.Upload(ctx, a.Path, to, key)
-			d.fileMu.Unlock()
+		local := to == d.Config.DeviceID
+		var pair Pair
+		if !local {
+			pairCtx, pairCancel := context.WithTimeout(ctx, 10*time.Second)
+			pair, e = d.ensurePair(pairCtx, to)
+			pairCancel()
 			if e != nil {
 				return nil, e
 			}
 		}
+		if kind == "file" {
+			if !local && !pair.Ready() {
+				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
+			}
+			d.fileMu.Lock()
+			key, keyErr := d.fileKey(ctx, to)
+			if keyErr != nil {
+				d.fileMu.Unlock()
+				return nil, keyErr
+			}
+			m.File, e = d.Files.stage(a.Path, to, m.ID, key)
+			d.fileMu.Unlock()
+			if e != nil {
+				return nil, e
+			}
+			if e = d.Store.setMetadata(ctx, "staged-file:"+m.ID, "pending"); e != nil {
+				os.Remove(d.Files.stagedPath(m.ID))
+				return nil, e
+			}
+		}
 		if e = d.Store.Enqueue(ctx, m); e != nil {
+			if m.File != nil {
+				os.Remove(d.Files.stagedPath(m.ID))
+			}
 			return nil, e
 		}
 		d.notify()
 		status := "pending"
-		if !pair.Ready() {
+		if !local && !pair.Ready() {
 			status = "pairing_pending"
 		}
 		return map[string]any{"id": m.ID, "status": status, "message": m, "pairing": pair}, nil
@@ -434,9 +417,6 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 	case "/v1/get":
 		return d.Store.Get(ctx, a.ID)
 	case "/v1/file/fetch":
-		if d.Files == nil {
-			return nil, errors.New("OSS is not configured")
-		}
 		r, e := d.Store.Get(ctx, a.ID)
 		if e != nil {
 			return nil, e
@@ -445,7 +425,7 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			return nil, errors.New("only received files can be fetched")
 		}
 		d.fileMu.Lock()
-		key, keyErr := d.Transport.PairKey(ctx, r.Message.From)
+		key, keyErr := d.fileKey(ctx, r.Message.From)
 		if keyErr != nil {
 			d.fileMu.Unlock()
 			return nil, keyErr

@@ -43,6 +43,7 @@ type Record struct {
 	Owner      string  `json:"owner,omitempty"`
 	LeaseUntil int64   `json:"lease_until,omitempty"`
 	Result     string  `json:"result,omitempty"`
+	Route      string  `json:"route,omitempty"`
 }
 type Peer struct {
 	SignPublic     string    `json:"sign_public"`
@@ -74,6 +75,17 @@ func ValidLabel(s string) bool {
 	return true
 }
 func (m Message) Validate() error {
+	if m.File != nil && m.Kind != "file" {
+		return errors.New("file metadata requires file message kind")
+	}
+	if m.Activity != nil {
+		if m.Kind != "progress" || m.Activity.TaskID != m.ReplyTo || m.Activity.Worker != m.Session {
+			return errors.New("invalid activity routing")
+		}
+		if e := m.Activity.Validate(); e != nil {
+			return e
+		}
+	}
 	if m.Protocol != ProtocolVersion {
 		return errors.New("unsupported message protocol")
 	}

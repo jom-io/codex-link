@@ -15,7 +15,7 @@ git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.3 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
@@ -36,6 +36,20 @@ AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
 - CLI、通用 Skill、MCP stdio 接入，不依赖特定模型。
 
 消息已送达只表示接收 daemon 已保存，不能证明聊天已读取或任务已执行。收到任务不等于获得执行授权；daemon 不自动执行命令，也不唤醒空闲聊天。会话别名用于路由和租约归属，不提供权限隔离。
+
+## 自动选路
+
+CLI 和 MCP 共用选路逻辑，调用方式不变：
+
+1. **同机本地**：同一用户、同一 daemon 下，发送到 `self`、本设备名称或 ID，直接投递 SQLite 收件箱，不需要给自己配对，也不联系 Redis/OSS。用 `--to-session` 指定另一聊天的唯一 session。
+2. **局域网直连**：已配对设备优先通过可达的私网 IPv4 子网加密直传。地址复用原有 Redis 设备登记旁的独立签名记录并在本地缓存；已缓存且地址仍可达时，Redis 断线也可直传。首次发现与配对仍需要 Redis。
+3. **云端回退**：直连不可用、失败或对端是旧版本时，使用原 Redis；文件仅在回退时上传 OSS。离线设备按原保留策略补收。
+
+文件在排队前生成加密快照，重试不重新读取可能已修改的原文件。直连接收端完成解密、大小和 SHA-256 验证并保存缓存后才确认送达；之后 `file fetch` 优先用缓存。确认包丢失后转云端仍复用原消息 ID，不生成第二个任务。
+
+已有配置默认 `routing: auto`，无需重写配置。此模式新增私网加密数据投递 TCP 端口，管理 API 仍仅在私有 Unix socket。地址必须是本地私网子网的数字 IP，身份必须通过既有配对验证；不新增组播发现服务、公网 IP、NAT 穿透或 VPN。仅 IPv6、Wi-Fi 隔离等情况回退云端。`routing: cloud` 关闭 LAN 监听及尝试，同机仍走本地。
+
+`agent-link get 消息ID` 可查看 `route: local|lan|cloud`；`status` 可查看 `routing` 和 `lan_listening`。回滚到不支持自动路由的旧版前先等待待发文件完成，旧版不会上传新版的文件暂存队列。详见[选路设计与验收](docs/routing.md)。
 
 ## Harness 接入
 
@@ -70,4 +84,4 @@ DeepSeek 桌面可在多个聊天间共用一个 MCP 进程，每个聊天先调
 
 保留原有能力边界：不保证外部任务副作用 exactly-once，不新增自动执行器、跨用户收件箱、自动 STS 刷新、归档自动解压或其他存储提供方。设备离线恢复受 Redis/OSS 保留策略限制；worker 超时只表示疑似无响应，不能据此重复执行任务。macOS 登录会话和 Keychain 需可用。
 
-开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0-rc.2`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。
+开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0-rc.3`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。
