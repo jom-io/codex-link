@@ -1,5 +1,23 @@
 # Verification record / 验证记录
 
+## Optional native inbox wake
+
+Run `go test -race ./...` (use the local codex-go wrapper where installed) and
+`node --test adapters/*.test.mjs`; the adapters use Node built-ins only. Tests
+cover explicit native identity, sender/conversation filtering, pagination,
+exclusive bindings, durable deferred queues, completed/other-owner task
+filtering, lost/forged acknowledgments, cooldown/rate limits, fixed local prompts,
+native request IDs, busy/approval deferral and UI fallback restrictions.
+
+Real acceptance must bind the actual installed harness, wait for listener ready,
+finish the current model turn, then send a fresh selected test task. Require a
+genuine model claim/result without another human input. Verify same-device
+messages report `route: local`; do not label a script sender as a second model.
+Disable/re-enable the listener and verify no wake while disabled, unread backlog
+recovery and no repeated native admission for the same request ID. A native API
+ACK is admission, not proof of task execution. The desktop fallback also needs
+actual selected-app accessibility verification when used.
+
 Automatic pairing revision included. Local development verification: 2026-10-03, macOS arm64, Go 1.27.1. The module targets Go 1.25+.
 
 ## Passed

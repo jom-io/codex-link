@@ -69,7 +69,7 @@ Identify the actual installed harness (binary, version, upstream and configured 
 
 ## Boundaries and verification
 
-An incoming message never grants permission to execute. Session filters route messages but are not isolation. Pairing, private-key storage, encrypted files, worker leases and v2 transport remain independent of the selected harness. No automatic execution, idle-chat wakeup or exactly-once external effects are added. Use separate task IDs and session owners for separate workers. A task should report its actual harness and verified result during an integration test, without exposing API keys or private configuration.
+An incoming message never grants permission to execute. Session filters route messages but are not isolation. Pairing, private-key storage, encrypted files, worker leases and v2 transport remain independent of the selected harness. Optional local native wake bindings can notify a selected chat; see the wake setup reference. Incoming messages still grant no execution permission, and exactly-once external effects are not promised. Use separate task IDs and session owners for separate workers. A task should report its actual harness and verified result during an integration test, without exposing API keys or private configuration.
 
 ## Agent names and concurrent windows
 

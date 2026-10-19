@@ -59,6 +59,10 @@ Communication (JSON output):
 Harness integration:
   mcp [--agent NAME] [--harness NAME] [--session NAME] [--allow-write] [--allow-files]
       Serve tools over MCP stdio (no task executor)
+  wake watch --session ALIAS --native-session CHAT_ID --from DEVICE_IDS
+       [--conversation LABELS] [--kinds task,result] [--state FILE]
+      Native-host inbox notifications over stdio; explicit chat binding required
+  wake status --state FILE
 
 Environment: AGENT_LINK_HOME (or legacy CODEX_LINK_HOME) overrides the data directory.
 Both command names share the existing codex-link data, Keychain and LaunchAgent.
@@ -78,6 +82,8 @@ func Run(args []string) error {
 		return nil
 	case "mcp":
 		return serveMCP(home, args[1:])
+	case "wake":
+		return serveWake(home, args[1:])
 	case "init", "configure":
 		return initialize(home, args[1:])
 	case "doctor":

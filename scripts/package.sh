@@ -24,9 +24,9 @@ for arch in arm64 amd64; do
   stage=$(mktemp -d)
   cp "$built" "$stage/agent-link"
   cp "$built" "$stage/codex-link"
-  for dir in skills scripts docs third_party; do cp -R "$root/$dir" "$stage/$dir"; done
+  for dir in skills scripts docs third_party adapters; do cp -R "$root/$dir" "$stage/$dir"; done
   for file in THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml; do cp "$root/$file" "$stage/"; done
-  COPYFILE_DISABLE=1 tar -czf "$out/agent-link_darwin_${arch}.tar.gz" -C "$stage" agent-link codex-link skills scripts docs third_party THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml
+  COPYFILE_DISABLE=1 tar -czf "$out/agent-link_darwin_${arch}.tar.gz" -C "$stage" agent-link codex-link skills scripts docs third_party adapters THIRD_PARTY_NOTICES.md LICENSE README.md README.zh-CN.md CHANGELOG.md config.example.yaml
   # Old release URLs and upgrade scripts may continue selecting the legacy name.
   cp "$out/agent-link_darwin_${arch}.tar.gz" "$out/codex-link_darwin_${arch}.tar.gz"
   rm -rf "$stage"

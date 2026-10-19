@@ -1,5 +1,10 @@
 # agent-link
 
+Optional [inbox wake adapters](docs/wake.md) resume an explicitly bound chat on
+new tasks/results. DeepSeek Harness uses its process-native session API; a
+strictly bound macOS UI fallback is opt-in. Existing installations remain manual
+until a local binding is enabled. CLI, MCP and automatic routing are unchanged.
+
 [简体中文](README.zh-CN.md) · [MIT License](LICENSE)
 
 Encrypted messaging, file transfer and task coordination between agent harnesses on your Macs. Codex, Claude Code and DeepSeek Harness use the same per-user Go daemon through a JSON CLI or MCP stdio. Model credentials stay with the harness.

@@ -1,5 +1,9 @@
 # agent-link
 
+可选的[收件唤醒适配器](docs/wake.md)可在新任务或结果到达后续接明确绑定的聊天。
+DeepSeek Harness 优先使用进程内原生会话接口，桌面模拟仅作为显式启用的后备。
+现有安装默认仍由活跃聊天读取收件箱；CLI、MCP 和自动路由继续可用。
+
 [English](README.md) · [MIT License](LICENSE)
 
 面向 Codex、Claude Code、DeepSeek Harness 等 AI 编程工具的跨 Mac 加密消息、文件和任务协作组件。各 harness 通过 JSON CLI 或 MCP stdio 使用同一个本地 Go daemon，不接管模型或模型 API 密钥。

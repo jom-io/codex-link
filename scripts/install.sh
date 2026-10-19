@@ -5,6 +5,7 @@ repo="${AGENT_LINK_REPOSITORY:-jom-io/codex-link}"
 bin_dir="${AGENT_LINK_BIN_DIR:-${CODEX_LINK_BIN_DIR:-$HOME/.local/bin}}"
 skill_dir="${AGENT_LINK_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/agent-link}"
 legacy_skill_dir="${CODEX_LINK_SKILL_DIR:-${CODEX_HOME:-$HOME/.codex}/skills/codex-link}"
+adapter_dir="${AGENT_LINK_ADAPTER_DIR:-$bin_dir/../share/agent-link/adapters}"
 agent_name="${AGENT_LINK_AGENT:-}"
 if [ -n "$agent_name" ]; then
   case "$agent_name" in *[!a-zA-Z0-9._-]*) echo "Invalid agent name" >&2; exit 1 ;; esac
@@ -42,10 +43,12 @@ if [ -n "$source_dir" ]; then
   fi
   cp "$built" "$tmp/pkg/agent-link"
   cp -R "$source_dir/skills" "$tmp/pkg/skills"
+  if [ -d "$source_dir/adapters" ]; then cp -R "$source_dir/adapters" "$tmp/pkg/adapters"; fi
 elif [ -n "$package_dir" ]; then
   package_dir=$(cd "$package_dir" && pwd)
   cp "$package_dir/agent-link" "$tmp/pkg/agent-link"
   cp -R "$package_dir/skills" "$tmp/pkg/skills"
+  if [ -d "$package_dir/adapters" ]; then cp -R "$package_dir/adapters" "$tmp/pkg/adapters"; fi
 else
   version="${AGENT_LINK_VERSION:-${CODEX_LINK_VERSION:-latest}}"
   if [ "$version" = latest ]; then base="https://github.com/$repo/releases/latest/download"
@@ -60,6 +63,7 @@ else
   [ -s "$tmp/selected.txt" ] || { echo "Missing release checksum" >&2; exit 1; }
   (cd "$tmp" && shasum -a 256 -c selected.txt)
   tar -xzf "$tmp/$asset" -C "$tmp/pkg" agent-link skills
+  if tar -tzf "$tmp/$asset" adapters >/dev/null 2>&1; then tar -xzf "$tmp/$asset" -C "$tmp/pkg" adapters; fi
 fi
 for skill in agent-link codex-link; do
   [ -f "$tmp/pkg/skills/$skill/SKILL.md" ] || { echo "Incomplete package: $skill" >&2; exit 1; }
@@ -82,6 +86,7 @@ if [ -f "$old" ]; then
   done
   if [ -d "$skill_dir" ] && [ ! -e "$backup/agent-link-skill" ]; then cp -Rp "$skill_dir" "$backup/agent-link-skill"; fi
   if [ -d "$legacy_skill_dir" ] && [ ! -e "$backup/codex-link-skill" ]; then cp -Rp "$legacy_skill_dir" "$backup/codex-link-skill"; fi
+  if [ -d "$adapter_dir" ] && [ ! -e "$backup/adapters" ]; then cp -Rp "$adapter_dir" "$backup/adapters"; fi
 fi
 restart=0
 if [ "${AGENT_LINK_NO_SERVICE:-0}" != 1 ] && /bin/launchctl print "gui/$(id -u)/io.jom.codex-link" >/dev/null 2>&1; then
@@ -98,6 +103,10 @@ done
 mkdir -p "$skill_dir" "$legacy_skill_dir"
 cp -R "$tmp/pkg/skills/agent-link/." "$skill_dir/"
 cp -R "$tmp/pkg/skills/codex-link/." "$legacy_skill_dir/"
+if [ -d "$tmp/pkg/adapters" ]; then
+  mkdir -p "$adapter_dir"
+  cp -R "$tmp/pkg/adapters/." "$adapter_dir/"
+fi
 if [ -n "$agent_name" ]; then
   for dir in "$skill_dir" "$legacy_skill_dir"; do
     mkdir -p "$dir/references"
@@ -112,3 +121,4 @@ if [ "$restart" -eq 1 ]; then
 fi
 printf 'Installed: %s/agent-link\nCompatibility CLI: %s/codex-link\nSkill: %s\nRollback snapshot: %s\n' "$bin_dir" "$bin_dir" "$skill_dir" "$backup"
 printf 'Existing installations: do NOT reinitialize. Run agent-link status and peers.\nNew installations: agent-link init --config config.local.yaml; agent-link daemon start\n'
+if [ -d "$tmp/pkg/adapters" ]; then printf 'Optional native wake adapters (not enabled): %s\n' "$adapter_dir"; fi

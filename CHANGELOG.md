@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.0-rc.4
+
+- Add opt-in inbox wake notifications with explicit native-chat/sender binding,
+  durable bounded queues, restart recovery, deduplication, cooldown and rate limits.
+- Add a DeepSeek Harness Cordis adapter using process-native session state and
+  idempotent queued prompts; stop its listener on plugin unload/disable.
+- Add an explicitly bound macOS UI fallback for absent native APIs. Preserve
+  drafts and approvals; uncertain native failures never switch to UI submission.
+- Ship adapter resources with source/release installs without enabling them or
+  changing existing identity, history, credentials, MCP permissions or routing.
+
 ## v0.2.0 (unreleased)
 
 - Automatic shared-daemon local delivery, authenticated private IPv4 direct
