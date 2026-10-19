@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.0-rc.5
+
+- Serialize file work by message ID instead of one global file lock, so a slow
+  incoming transfer cannot block unrelated same-device sends or cached fetches.
+- Cancel file-lock waiters with their request and release unused lock entries.
+
 ## v0.2.0-rc.4
 
 - Add opt-in inbox wake notifications with explicit native-chat/sender binding,

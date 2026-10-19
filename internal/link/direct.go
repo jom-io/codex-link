@@ -95,6 +95,14 @@ func (dr *directRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	controller.SetReadDeadline(time.Now().Add(30 * time.Minute))
+	if m.File != nil {
+		unlock, err := d.fileMu.acquire(r.Context(), m.ID)
+		if err != nil {
+			http.Error(w, "file request canceled", http.StatusRequestTimeout)
+			return
+		}
+		defer unlock()
+	}
 	if existing, err := d.Store.Get(r.Context(), m.ID); err == nil {
 		before, _ := json.Marshal(existing.Message)
 		after, _ := json.Marshal(m)
@@ -109,9 +117,7 @@ func (dr *directRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid file sender", http.StatusForbidden)
 			return
 		}
-		d.fileMu.Lock()
 		path, err := d.Files.receive(m, key, r.Body)
-		d.fileMu.Unlock()
 		if err != nil {
 			http.Error(w, "file authentication failed", http.StatusBadRequest)
 			return

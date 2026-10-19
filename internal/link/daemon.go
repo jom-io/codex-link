@@ -27,7 +27,7 @@ type Daemon struct {
 	Direct    *directRouter
 	mu        sync.Mutex
 	changed   chan struct{}
-	fileMu    sync.Mutex
+	fileMu    fileLocks
 	statusMu  sync.Mutex
 	connected bool
 }
@@ -355,14 +355,17 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			if !local && !pair.Ready() {
 				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
 			}
-			d.fileMu.Lock()
+			unlock, lockErr := d.fileMu.acquire(ctx, m.ID)
+			if lockErr != nil {
+				return nil, lockErr
+			}
 			key, keyErr := d.fileKey(ctx, to)
 			if keyErr != nil {
-				d.fileMu.Unlock()
+				unlock()
 				return nil, keyErr
 			}
 			m.File, e = d.Files.stage(a.Path, to, m.ID, key)
-			d.fileMu.Unlock()
+			unlock()
 			if e != nil {
 				return nil, e
 			}
@@ -430,14 +433,16 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		if r.Direction != "in" {
 			return nil, errors.New("only received files can be fetched")
 		}
-		d.fileMu.Lock()
+		unlock, lockErr := d.fileMu.acquire(ctx, a.ID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		defer unlock()
 		key, keyErr := d.receivedFileKey(ctx, r.Message)
 		if keyErr != nil {
-			d.fileMu.Unlock()
 			return nil, keyErr
 		}
 		p, e := d.Files.Download(ctx, r.Message, key)
-		d.fileMu.Unlock()
 		if e != nil {
 			return nil, e
 		}

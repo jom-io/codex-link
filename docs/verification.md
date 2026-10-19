@@ -18,6 +18,49 @@ recovery and no repeated native admission for the same request ID. A native API
 ACK is admission, not proof of task execution. The desktop fallback also needs
 actual selected-app accessibility verification when used.
 
+### Real DeepSeek desktop acceptance (2026-10-20, Asia/Shanghai)
+
+Both Macs installed rc.4 from committed Git source at `7c75adc`; the home
+upgrade used a SHA-256-verified Git bundle when GitHub access failed. The home
+desktop runs DeepSeek Harness 0.2.1-rc.2. Its installed Cordis resolver confirmed
+that injection object keys are service names; the adapter now declares
+`['sessionController']`. The native controller returns Agent directly, which
+the adapter accepts along with wrapped resolver results.
+
+- A fresh office task entered the bound chat's busy queue. After the current
+  model turn ended, the process-native plugin submitted its fixed retrieval
+  prompt. The real model claimed and completed the exact task without another
+  human chat input; native chat ID, worker alias and nonce matched. Listener
+  parent PID belonged to the actual DSH host, and accepted count increased to 1.
+- A CLI test publisher on the home Mac sent a task to the same real DeepSeek
+  chat. While that chat ran, the task stayed pending with status `busy`. After
+  the outer turn ended, a new native prompt started the model, which completed
+  the inner task. Both its task and result reported `route: local`; native
+  accepted count advanced from 1 to 2 to 3. This publisher is not a second
+  model or a real Codex session.
+- The same CLI publisher and real DeepSeek chat exchanged a new non-secret
+  247-byte file in both directions. Both file records reported `route: local`
+  and matched the complete SHA-256. An inner task automatically started the
+  receiving model's next turn. A first send had hung before producing a message
+  ID; restarting the link daemon restored service. Two later sends took 0.030s
+  and 0.017s. No pre-restart stack was captured, so that incident's exact cause
+  remains unknown.
+
+The rc.5 concurrency regression reproduces a related defect deterministically:
+pause an authenticated incoming file body, then send, deliver and fetch another
+file locally. The old global lock blocks this local transfer; per-message locks
+allow it to finish while the remote body remains paused. Tests also cover a
+canceled same-file waiter and release of inactive lock entries. Full Go
+race/vet checks passed after this fix. This reproduction does not establish the
+uncaptured home incident's exact cause.
+
+Local Go race/vet checks and nine Node adapter tests passed. Real Codex desktop
+wake, live UI fallback and native plugin disable/re-enable recovery remain
+unverified; queue recovery and stopped dispatch have automated coverage.
+Do not count a standalone mock adapter process or an old state file as evidence
+that the desktop plugin is active. A running desktop host is required for its
+bound native wake listener.
+
 Automatic pairing revision included. Local development verification: 2026-10-03, macOS arm64, Go 1.27.1. The module targets Go 1.25+.
 
 ## Passed

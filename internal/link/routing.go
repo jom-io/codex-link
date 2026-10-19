@@ -46,14 +46,17 @@ func (d *Daemon) receivedFileKey(ctx context.Context, m Message) (string, error)
 func (d *Daemon) deliverOutgoing(ctx context.Context, m Message) error {
 	if m.To == d.Config.DeviceID {
 		if m.File != nil {
+			unlock, err := d.fileMu.acquire(ctx, m.ID)
+			if err != nil {
+				return err
+			}
+			defer unlock()
 			if d.Store.metadata(ctx, "staged-file:"+m.ID) == "" {
 				key, e := d.receivedFileKey(ctx, m)
 				if e != nil {
 					return e
 				}
-				d.fileMu.Lock()
 				path, err := d.Files.Download(ctx, m, key)
-				d.fileMu.Unlock()
 				if err != nil {
 					return err
 				}
@@ -67,10 +70,8 @@ func (d *Daemon) deliverOutgoing(ctx context.Context, m Message) error {
 				}
 				key, e := d.fileKey(ctx, m.To)
 				if e == nil {
-					d.fileMu.Lock()
 					var path string
 					path, e = d.Files.receive(m, key, src)
-					d.fileMu.Unlock()
 					if e == nil {
 						e = d.Store.SetFile(ctx, m.ID, path)
 					}
