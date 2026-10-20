@@ -18,7 +18,57 @@ recovery and no repeated native admission for the same request ID. A native API
 ACK is admission, not proof of task execution. The desktop fallback also needs
 actual selected-app accessibility verification when used.
 
-### Real DeepSeek desktop acceptance (2026-10-20, Asia/Shanghai)
+### Real Codex desktop and bidirectional wake (2026-10-20, Asia/Shanghai)
+
+Both actual Macs pulled the same Git branch with fast-forward-only updates and
+installed rc.7 from `62bc0dc`. Each Mac ran all 18 Node adapter tests. The added
+local-owner regression failed against rc.6 before the fix. Existing Go race/vet
+checks passed, and GitHub CI passed for the fix; Node tests were run explicitly
+on both Macs, with the existing CI workflow retained.
+
+The first rc.6 live submission displayed a fixed inbox prompt but failed with
+`User-message admission requires a cloud app-server host`. The exact native
+message record had failed status and a null model turn ID. That attempt and a
+human's subsequent “continue” are not counted as automatic wake. The selected
+office listener was stopped; its journal was backed up and the exact verified
+rejection retained as `rejected`. No history or pending inbox was deleted.
+rc.7 uses the local owner's normal turn path with cloud admission disabled.
+
+- While office's model ran, the home task and results stayed in its durable
+  busy queue, with accepted count zero. At 11:14:39 the native sidecar admitted
+  the fixed retrieval prompt after that turn ended. A new real Codex model turn
+  began without another human input. Its native message ID matched the accepted
+  event, and a separate selected-chat snapshot confirmed a non-null model turn
+  ID, in-progress status and no error. Office's accepted count became one,
+  pending queue emptied and failures remained zero.
+- That new model turn claimed and completed the exact home probe and returned
+  the matching nonce, actual worker/thread/turn IDs, version and native evidence.
+  The result then automatically started another real DeepSeek turn. Home
+  verified the result and sent one progress report at 11:16:04; its native
+  listener was still owned by the DSH host, accepted count was 17 and pending
+  queue empty. No acknowledgement-only reply loop was created. Both directions
+  therefore passed real automatic-model wake. This particular two-Mac exchange
+  used `cloud`; it is not an additional local/LAN transport test.
+
+The same Codex adapter is installed on home for reuse, but home-codex itself
+remains unbound and its real-model acceptance is deferred for the known network
+issue. Office's current binding permits the paired home device and this test
+conversation; other chats/conversations need their own configured binding/scope.
+Codex desktop protocol v11 was checked on bundled codex-cli
+`0.163.0-alpha.10.2`. Internal-protocol compatibility, an idle-check race with a
+simultaneous human prompt, and quarantined uncertain admissions remain limits;
+do not claim atomic idle-only execution, security isolation or exactly-once
+external effects. See the Codex setup and recovery section in `wake.md`.
+
+The final office preservation check retained all 4,436 baseline messages with
+zero missing/changed bodies or directions, unchanged agent-link configuration
+and daemon LaunchAgent digests, and SQLite integrity OK. The global Codex
+configuration digest differed: its modification time was 11:07:03, while the
+office wake sidecar was stopped (11:04:58–11:13:23), before the successful
+native wake at 11:14:39. Its change origin was not established; the existing
+configuration was preserved and no restoration or overwrite was attempted.
+
+### Real DeepSeek desktop acceptance (rc.4/rc.5 checkpoint, 2026-10-20)
 
 Both Macs installed rc.4 from committed Git source at `7c75adc`; the home
 upgrade used a SHA-256-verified Git bundle when GitHub access failed. The home
@@ -74,8 +124,8 @@ Use a private copy of only the selected file when diagnosing such a path issue;
 do not mistake it for a proven transfer-lock deadlock. See the file-path note
 in the command reference.
 
-Local Go race/vet checks and nine Node adapter tests passed. Real Codex desktop
-wake, live UI fallback and native plugin disable/re-enable recovery remain
+At that checkpoint, local Go race/vet checks and nine Node adapter tests passed.
+Real Codex desktop wake, live UI fallback and native plugin disable/re-enable recovery remained
 unverified; queue recovery and stopped dispatch have automated coverage.
 Do not count a standalone mock adapter process or an old state file as evidence
 that the desktop plugin is active. A running desktop host is required for its
