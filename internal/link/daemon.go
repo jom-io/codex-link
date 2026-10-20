@@ -483,6 +483,13 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		}
 		return map[string]string{"id": a.ID, "path": p}, nil
 	case "/v1/task/claim":
+		addressed, e := d.Store.Get(ctx, a.ID)
+		if e != nil {
+			return nil, e
+		}
+		if strings.HasPrefix(addressed.Message.Conversation, "channel-") && addressed.Message.ToSession != "" && addressed.Message.ToSession != a.Session {
+			return nil, errors.New("channel task is addressed to another chat; retain the exact registered worker")
+		}
 		if a.Lease == 0 {
 			a.Lease = 900
 		}

@@ -164,6 +164,10 @@ func TestSessionBindingHandshakeFanoutScopeAndRealProbe(t *testing.T) {
 	if probe.ID == "" {
 		t.Fatal("no automatic probe")
 	}
+	if _, e = b.dispatch(ctx, "/v1/task/claim", APIRequest{ID: probe.ID, Session: home2.Session, Lease: 60}); e == nil {
+		t.Fatal("wrong chat claimed an addressed channel task")
+	}
+
 	if _, e = b.verifyProbe(ctx, APIRequest{ID: probe.ID, Session: home1.Session}); e == nil {
 		t.Fatal("probe completed without model lease")
 	}
