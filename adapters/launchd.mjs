@@ -4,7 +4,7 @@ export async function replaceLaunchAgent(target, path, launchctl, pause = ms => 
   launchctl(['bootout', target], false);
   launchctl(['enable', target]);
   let last;
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 120; attempt++) {
     const result = launchctl(['bootstrap', target.slice(0, target.lastIndexOf('/')), path], false);
     if (!result.error && result.status === 0) return;
     last = result;

@@ -82,7 +82,7 @@ export async function attachCodex(ep, { cliPath = process.env.AGENT_LINK_CLI_PAT
   if (existing === body) { try { const result = await run('/bin/launchctl', ['print', 'gui/' + process.getuid() + '/' + service.label], { timeout: 5000 }); alive = /^\s*pid = [1-9][0-9]*\s*$/m.test(result.stdout); } catch {} }
   if (!alive) {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await writeFile(path, body, { mode: 0o600 }); await chmod(path, 0o600);
-    await run(process.execPath, [new URL('./codex-desktop.mjs', import.meta.url).pathname, 'install', '--config', path], { timeout: 20000 });
+    await run(process.execPath, [new URL('./codex-desktop.mjs', import.meta.url).pathname, 'install', '--config', path], { timeout: 45000 });
   }
   await callCLI(cliPath, ['session', 'receiver', '--session', ep.session, '--native-session', ep.native_session, '--state', 'connected']);
   return { endpoint: ep.id, receiver: 'connected', restarted: !alive };

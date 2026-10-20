@@ -438,7 +438,7 @@ func launch(home, action string) error {
 		cmd := exec.Command("/bin/launchctl", args...)
 		b, e := cmd.CombinedOutput()
 		if e != nil {
-			return fmt.Errorf("launchctl %s failed: %s", args[0], strings.TrimSpace(string(b)))
+			return fmt.Errorf("launchctl %s failed (%v): %s", args[0], e, strings.TrimSpace(string(b)))
 		}
 		return nil
 	}
@@ -496,6 +496,19 @@ func launch(home, action string) error {
 			if e = command("bootout", target); e != nil {
 				return e
 			}
+			// A successful bootout is asynchronous while daemon shutdown drains its
+			// own sockets. Do not replace/start the binary until registration is gone.
+			gone := false
+			for attempt := 0; attempt < 120; attempt++ {
+				if exec.Command("/bin/launchctl", "print", target).Run() != nil {
+					gone = true
+					break
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			if !gone {
+				return errors.New("daemon is still stopping; data and binary retained, retry after shutdown")
+			}
 		}
 		if action == "uninstall" {
 			if e = os.Remove(path); e != nil && !os.IsNotExist(e) {
@@ -510,7 +523,7 @@ func launch(home, action string) error {
 
 func startLaunchAgent(loaded func() bool, command func(...string) error, domain, target, path string, pause func(time.Duration)) error {
 	var last error
-	for attempt := 0; attempt < 12; attempt++ {
+	for attempt := 0; attempt < 120; attempt++ {
 		if loaded() {
 			last = command("kickstart", "-k", target)
 		} else {

@@ -129,7 +129,7 @@ func serveSessions(home string, args []string) error {
 		return errors.New("unexpected session arguments")
 	}
 	a.Targets = targets
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	if op == "session/attach" {
 		if e := nativeContext(&a); e != nil {
