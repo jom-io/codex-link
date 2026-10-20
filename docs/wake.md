@@ -216,3 +216,15 @@ acceptance cache too. No automatic task ownership or permission changes occur.
 Other harnesses can use `adapters/native-host.mjs` with their local `inspect`
 and `submit` functions. Codex desktop uses the selected-chat sidecar above;
 do not replace it with a separate CLI resume process.
+
+
+## Handled inbox messages (rc.10+)
+
+After this chat processes exact incoming result/text/file IDs during any active
+turn, call `agent-link inbox ack ID [ID ...] --session RETAINED_WORKER` before
+ending it. MCP uses `agent_link_inbox_ack` with the existing write opt-in and
+retained session. Reads are still read-only. The local per-chat marker survives
+restart; scans and pending-queue rechecks exclude it. Other chats, history,
+cursors and leases are unchanged, and unfinished tasks cannot be acknowledged.
+There is no remote acknowledgement message or reply loop. Already admitted
+native prompts cannot be withdrawn; a short check-to-admission race remains.

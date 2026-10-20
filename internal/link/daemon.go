@@ -269,6 +269,16 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		}
 	}
 	switch path {
+	case "/v1/inbox/ack":
+		n, e := d.Store.AckInbox(ctx, d.Config.DeviceID, a.Session, a.Messages)
+		if e != nil {
+			return nil, e
+		}
+		d.notify()
+		return map[string]any{"status": "acknowledged", "session": a.Session, "messages": a.Messages, "acknowledged": n}, nil
+	case "/v1/inbox/handled":
+		handled, e := d.Store.InboxHandled(ctx, a.Session, a.ID)
+		return map[string]any{"handled": handled}, e
 	case "/v1/workers", "/v1/task/status":
 		return d.Store.Activities(ctx, a.ID)
 	case "/v1/worker/pulse":

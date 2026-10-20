@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.0-rc.10
+
+- Add explicit per-chat handled-message acknowledgement through CLI and opt-in MCP.
+  Preserve read-only reads, history, task ownership and separate file permissions.
+- Filter handled IDs during scans and pending wake rechecks, including after
+  restart, so receipts processed while busy do not cause a late duplicate wake.
+- Reject foreign/outgoing messages and unfinished tasks atomically; keep
+  already-admitted native prompts subject to the host’s existing semantics.
+
 ## v0.2.0-rc.7
 
 - Use normal native turn submission for local Codex chats. The cloud-only

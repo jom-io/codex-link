@@ -52,6 +52,8 @@ Communication (JSON output):
   send --to NAME_OR_ID --text TEXT [--kind text|task|progress|result]
        [--session NAME] [--to-session NAME] [--conversation NAME] [--reply-to ID]
   inbox|history [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
+  inbox ack MESSAGE_ID [MESSAGE_ID ...] [--session RETAINED_WORKER]
+      Mark only processed messages in THIS chat; reads keep history and do not ack
   task list [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
   wait [--after SEQ] [--timeout 30] [--session NAME] [--conversation NAME]
   get ID
@@ -89,6 +91,10 @@ func Run(args []string) error {
 		return serveMCP(home, args[1:])
 	case "session", "bind", "bindings", "unbind":
 		return serveSessions(home, args)
+	case "inbox":
+		if len(args) > 1 && args[1] == "ack" {
+			return serveInboxAck(home, args[2:])
+		}
 	case "wake":
 		return serveWake(home, args[1:])
 	case "init", "configure":

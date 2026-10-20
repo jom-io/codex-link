@@ -13,7 +13,10 @@ import (
 	"github.com/jom-io/codex-link/internal/link"
 )
 
-type inboxFixture struct{ rows []link.Record }
+type inboxFixture struct {
+	rows    []link.Record
+	handled map[string]bool
+}
 
 func (f *inboxFixture) call(_ context.Context, op string, a link.APIRequest) (json.RawMessage, error) {
 	var v any
@@ -45,11 +48,52 @@ func (f *inboxFixture) call(_ context.Context, op string, a link.APIRequest) (js
 			}
 		}
 		return nil, fmt.Errorf("not found")
+	case "inbox/handled":
+		v = map[string]any{"handled": f.handled[a.Session+":"+a.ID]}
 	default:
 		return nil, fmt.Errorf("unexpected operation")
 	}
 	b, e := json.Marshal(v)
 	return b, e
+}
+
+func TestHandledBusyResultsAreRemovedAfterRestartButNewMessagesWake(t *testing.T) {
+	ctx := context.Background()
+	f := &inboxFixture{rows: []link.Record{record(1, "result"), record(2, "result")}, handled: map[string]bool{}}
+	c := config(t)
+	w := openFixture(t, c, f)
+	if _, e := w.Step(ctx, func(_ context.Context, event Event) (Ack, error) {
+		return Ack{ID: event.ID, Status: "busy"}, nil
+	}, time.Now()); e != nil || len(w.state.Pending) != 2 {
+		t.Fatal(e, w.state)
+	}
+	f.handled[c.Session+":m-1"] = true
+	w.Close()
+	w = openFixture(t, c, f)
+	if _, e := w.Step(ctx, func(_ context.Context, event Event) (Ack, error) {
+		if len(event.Messages) != 1 || event.Messages[0].ID != "m-2" {
+			t.Fatal("handled result survived queued recheck", event.Messages)
+		}
+		return Ack{ID: event.ID, Status: "busy"}, nil
+	}, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	f.handled[c.Session+":m-2"] = true
+	if _, e := w.Step(ctx, func(context.Context, Event) (Ack, error) {
+		t.Fatal("already processed results caused an idle wake")
+		return Ack{}, nil
+	}, time.Now().Add(time.Second)); e != nil || len(w.state.Pending) != 0 || w.state.Accepted != 0 {
+		t.Fatal(e, w.state)
+	}
+	f.rows = append(f.rows, record(3, "task"), record(4, "result"))
+	if _, e := w.Step(ctx, func(_ context.Context, event Event) (Ack, error) {
+		if len(event.Messages) != 2 || event.Messages[0].ID != "m-3" || event.Messages[1].ID != "m-4" {
+			t.Fatal("fresh work was suppressed", event.Messages)
+		}
+		return Ack{ID: event.ID, Status: "accepted"}, nil
+	}, time.Now().Add(2*time.Second)); e != nil || w.state.Accepted != 1 {
+		t.Fatal(e, w.state)
+	}
 }
 func record(seq int64, kind string) link.Record {
 	return link.Record{Seq: seq, Direction: "in", Status: "received", Message: link.Message{ID: fmt.Sprintf("m-%d", seq), From: "office", ToSession: "home-ds-test", Kind: kind, Text: "secret-bearing remote instruction must never enter the wake prompt"}}

@@ -52,6 +52,33 @@ func TestMCPPermissionsAndSessionOwnership(t *testing.T) {
 	}
 }
 
+func TestMCPInboxAckKeepsWriteAndChatPermissions(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	s := mcpServer{session: "retained-chat", call: func(_ context.Context, _, op string, a link.APIRequest) (json.RawMessage, error) {
+		calls++
+		if op != "inbox/ack" || a.Session != "retained-chat" || len(a.Messages) != 2 || a.Messages[0] != "result-one" || a.Messages[1] != "result-two" {
+			t.Fatal(op, a)
+		}
+		return json.RawMessage(`{"status":"acknowledged","acknowledged":2}`), nil
+	}}
+	if _, e := s.toolCall(ctx, "agent_link_inbox_ack", json.RawMessage(`{"messages":["result-one","result-two"]}`)); e == nil || calls != 0 {
+		t.Fatal("read-only MCP exposed consumption writes")
+	}
+	s.write = true
+	for _, args := range []string{`{}`, `{"messages":[]}`, `{"messages":null}`, `{"messages":[""]}`, `{"messages":["result-one"],"session":"other-chat"}`} {
+		if _, e := s.toolCall(ctx, "agent_link_inbox_ack", json.RawMessage(args)); e == nil || calls != 0 {
+			t.Fatal("invalid or foreign chat acknowledgement reached daemon", args, e)
+		}
+	}
+	if _, e := s.toolCall(ctx, "agent_link_inbox_ack", json.RawMessage(`{"messages":["result-one","result-two"]}`)); e != nil || calls != 1 {
+		t.Fatal(e, calls)
+	}
+	if s.files {
+		t.Fatal("ack enabled file tools")
+	}
+}
+
 func TestMCPStdioLifecycleAndErrors(t *testing.T) {
 	s := mcpServer{session: "window-two", harness: "claude-code", call: func(_ context.Context, _, _ string, _ link.APIRequest) (json.RawMessage, error) {
 		return nil, errors.New("daemon unavailable")

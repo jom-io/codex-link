@@ -15,10 +15,14 @@ agent-link wait --after 12 --session requester --conversation setup --timeout 30
 agent-link file send --to office-mac --path /absolute/path/report.zip --conversation setup
 agent-link file fetch FILE_MESSAGE_ID
 agent-link get MESSAGE_ID
+# Only after this chat has processed these exact incoming messages:
+agent-link inbox ack RESULT_ID FILE_ID --session worker
 agent-link history --after 0 --limit 100 --json
 ```
 
 Place message/task IDs before flags. `--after` is a local numeric SQLite sequence, not a Redis ID or the remote machine's sequence. Default `wait --after 0` returns matching saved incoming messages; pass an advanced cursor to avoid repeated reads. `wait --after -1` waits only for future messages and can skip existing messages, so use it only deliberately. `inbox`/`history` always sort ascending, with up to 100 records by default (maximum 1000).
+
+`inbox ack` (rc.10+) records handled state locally for 1–32 exact incoming IDs and the receiving full worker. Duplicate IDs and repeated calls are safe; an invalid ID, foreign chat, outgoing record or unfinished task rejects the whole batch. Results, text and files may be acknowledged after processing; a task must first be completed by this owner. Reads remain read-only, history/cursors/leases are unchanged, and acknowledgement sends no network message. A live wake listener rechecks queued IDs before submitting. An already admitted native prompt cannot be retracted. MCP exposes `agent_link_inbox_ack` only with `--allow-write`, with `messages: ["ID"]` and the chat’s retained `session`; it grants no file access.
 
 `--session` on send identifies the sender; `--to-session` routes to a receiver alias. On inbox/wait, `--session` includes that alias plus the device's public messages. All windows retain full local access; session filters provide routing, not an authorization boundary. Replies to tasks route back to the sender's alias. No opaque harness chat ID is required or inferred.
 

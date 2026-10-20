@@ -10,7 +10,7 @@ const event = () => ({ type: 'wake', id: 'a'.repeat(32), session: 'home-ds-test'
 
 test('native dispatch binds one actual chat, reconstructs fixed input and deduplicates', async () => {
   let submitted = 0;
-  const host = { inspect: async id => { assert.equal(id, 'real-chat-42'); return 'idle'; }, submit: async (id, prompt) => { submitted++; assert.equal(id, 'real-chat-42'); assert.match(prompt, /message-id/); assert.doesNotMatch(prompt, /UNTRUSTED BODY/); } };
+  const host = { inspect: async id => { assert.equal(id, 'real-chat-42'); return 'idle'; }, submit: async (id, prompt) => { submitted++; assert.equal(id, 'real-chat-42'); assert.match(prompt, /message-id/); assert.doesNotMatch(prompt, /UNTRUSTED BODY/); assert.match(prompt, /inbox ack HANDLED_IDS --session home-ds-test/); assert.match(prompt, /never acknowledge unfinished tasks/); } };
   const d = new NativeDispatcher(config(), host);
   assert.equal((await d.dispatch({ ...event(), native_session: 'other-chat' })).status, 'error');
   assert.equal((await d.dispatch(event())).status, 'accepted');

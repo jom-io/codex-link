@@ -325,6 +325,13 @@ func (d *Daemon) wakeEligible(ctx context.Context, a APIRequest) (any, error) {
 	m := r.Message
 	allowed := false
 	if r.Direction == "in" && m.ToSession == ep.Session && m.To == ep.Device && m.Activity == nil && m.Pair == nil {
+		handled, e := d.Store.InboxHandled(ctx, ep.Session, m.ID)
+		if e != nil {
+			return nil, e
+		}
+		if handled {
+			return map[string]any{"allowed": false, "paused": ep.Paused, "wake": ep.Wake}, nil
+		}
 		bs, e := d.Store.Bindings(ctx, a.Session)
 		if e != nil {
 			return nil, e
