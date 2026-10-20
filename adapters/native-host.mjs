@@ -14,7 +14,7 @@ export function validateBinding(config) {
   if (!label(config.session) || typeof config.nativeSessionId !== 'string' || !config.nativeSessionId || /[\r\n\0]/.test(config.nativeSessionId)) {
     throw new Error('Bind an explicit worker session and actual native chat ID');
   }
-  if (!isAbsolute(config.cliPath ?? '') || !Array.isArray(config.from) || !config.from.length || !config.from.every(label)) {
+  if (!isAbsolute(config.cliPath ?? '') || !Array.isArray(config.from) || (!config.from.length && config.registry !== true) || !config.from.every(label)) {
     throw new Error('An absolute CLI path and explicit sender allowlist are required');
   }
   if (config.conversations && (!Array.isArray(config.conversations) || !config.conversations.every(label))) throw new Error('Invalid conversation allowlist');
@@ -87,6 +87,7 @@ export function startNativeBridge(config, host, logger = () => {}) {
   const dispatcher = new NativeDispatcher(config, host, logger);
   if (config.enabled !== true) return { dispose() {}, enabled: false };
   const args = ['wake', 'watch', '--session', config.session, '--native-session', config.nativeSessionId, '--from', config.from.join(',')];
+  if (config.registry === true) args.push('--registry');
   if (config.conversations?.length) args.push('--conversation', config.conversations.join(','));
   if (config.kinds?.length) args.push('--kinds', config.kinds.join(','));
   if (config.statePath) args.push('--state', config.statePath);

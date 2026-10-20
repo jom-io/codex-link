@@ -18,18 +18,19 @@ import (
 )
 
 type Daemon struct {
-	pairMu    sync.Mutex
-	Config    Config
-	Home      string
-	Store     *Store
-	Transport *Transport
-	Files     *Files
-	Direct    *directRouter
-	mu        sync.Mutex
-	changed   chan struct{}
-	fileMu    fileLocks
-	statusMu  sync.Mutex
-	connected bool
+	pairMu     sync.Mutex
+	registryMu sync.Mutex
+	Config     Config
+	Home       string
+	Store      *Store
+	Transport  *Transport
+	Files      *Files
+	Direct     *directRouter
+	mu         sync.Mutex
+	changed    chan struct{}
+	fileMu     fileLocks
+	statusMu   sync.Mutex
+	connected  bool
 }
 
 func (d *Daemon) notify() {
@@ -189,23 +190,33 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
-	State        string `json:"state,omitempty"`
-	Stage        string `json:"stage,omitempty"`
-	Code         string `json:"code,omitempty"`
-	To           string `json:"to,omitempty"`
-	Text         string `json:"text,omitempty"`
-	Kind         string `json:"kind,omitempty"`
-	Session      string `json:"session,omitempty"`
-	ToSession    string `json:"to_session,omitempty"`
-	Conversation string `json:"conversation,omitempty"`
-	ReplyTo      string `json:"reply_to,omitempty"`
-	ID           string `json:"id,omitempty"`
-	Path         string `json:"path,omitempty"`
-	After        int64  `json:"after"`
-	Limit        int    `json:"limit,omitempty"`
-	History      bool   `json:"history,omitempty"`
-	Timeout      int    `json:"timeout,omitempty"`
-	Lease        int    `json:"lease,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Agent         string   `json:"agent,omitempty"`
+	Harness       string   `json:"harness,omitempty"`
+	Profile       string   `json:"profile,omitempty"`
+	NativeSession string   `json:"native_session,omitempty"`
+	EnableWake    bool     `json:"enable_wake,omitempty"`
+	TextWake      bool     `json:"text_wake,omitempty"`
+	All           bool     `json:"all,omitempty"`
+	Targets       []string `json:"targets,omitempty"`
+	Channel       string   `json:"channel,omitempty"`
+	State         string   `json:"state,omitempty"`
+	Stage         string   `json:"stage,omitempty"`
+	Code          string   `json:"code,omitempty"`
+	To            string   `json:"to,omitempty"`
+	Text          string   `json:"text,omitempty"`
+	Kind          string   `json:"kind,omitempty"`
+	Session       string   `json:"session,omitempty"`
+	ToSession     string   `json:"to_session,omitempty"`
+	Conversation  string   `json:"conversation,omitempty"`
+	ReplyTo       string   `json:"reply_to,omitempty"`
+	ID            string   `json:"id,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	After         int64    `json:"after"`
+	Limit         int      `json:"limit,omitempty"`
+	History       bool     `json:"history,omitempty"`
+	Timeout       int      `json:"timeout,omitempty"`
+	Lease         int      `json:"lease,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -236,6 +247,26 @@ func (d *Daemon) Handler() http.Handler {
 	return mux
 }
 func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, error) {
+	if strings.HasPrefix(path, "/v1/session/") || path == "/v1/bind" || path == "/v1/bindings" || path == "/v1/unbind" || path == "/v1/wake/eligible" {
+		return d.sessionDispatch(ctx, path, a)
+	}
+	if a.Channel != "" {
+		if (path == "/v1/send" || path == "/v1/file/send") && a.All {
+			return d.channelFanout(ctx, path, a)
+		}
+		var e error
+		if path == "/v1/send" || path == "/v1/file/send" {
+			a, e = d.resolveChannelRecipient(ctx, a)
+		} else {
+			if a.Conversation != "" {
+				return nil, errors.New("channel and conversation cannot be combined")
+			}
+			a.Conversation, e = d.channel(ctx, a.Session, a.Channel)
+		}
+		if e != nil {
+			return nil, e
+		}
+	}
 	switch path {
 	case "/v1/workers", "/v1/task/status":
 		return d.Store.Activities(ctx, a.ID)

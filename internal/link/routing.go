@@ -21,6 +21,12 @@ func (d *Daemon) acceptIncoming(ctx context.Context, m Message, cursor string, r
 	if e := d.Store.accept(ctx, &m, cursor, receipt, route); e != nil {
 		return e
 	}
+	if e := d.receiveProbeResult(ctx, m); e != nil {
+		return e
+	}
+	if e := d.receiveControl(ctx, m); e != nil {
+		return e
+	}
 	d.notify()
 	return nil
 }
@@ -86,6 +92,12 @@ func (d *Daemon) deliverOutgoing(ctx context.Context, m Message) error {
 			return e
 		}
 		d.finishStaged(ctx, m)
+		if e := d.receiveProbeResult(ctx, m); e != nil {
+			return e
+		}
+		if e := d.receiveControl(ctx, m); e != nil {
+			return e
+		}
 		d.notify()
 		return nil
 	}

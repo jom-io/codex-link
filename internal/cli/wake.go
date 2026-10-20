@@ -29,6 +29,7 @@ func serveWake(home string, args []string) error {
 	fs := flag.NewFlagSet("wake "+args[0], flag.ContinueOnError)
 	var c wake.Config
 	var sources, conversations, kinds string
+	fs.BoolVar(&c.Registry, "registry", false, "recheck persistent per-chat channel scopes before native wake")
 	fs.StringVar(&c.Session, "session", "", "unique local worker session bound to this chat")
 	fs.StringVar(&c.NativeSession, "native-session", "", "actual harness chat ID; never inferred from a worker alias")
 	fs.StringVar(&sources, "from", "", "comma-separated allowed device IDs; self means this device")

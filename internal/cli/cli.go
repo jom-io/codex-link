@@ -40,6 +40,11 @@ Setup:
   daemon run|install|start|stop|uninstall
 
 Communication (JSON output):
+  session attach [--name ALIAS] [--wake]  Register/resume THIS native chat
+  session list [--to PAIRED_DEVICE] | current | pause | resume
+  bind TARGET... --channel NAME | bind --accept INVITATION_ID
+  bindings | unbind --channel NAME
+  send --channel NAME [--to CHAT_ID | --all] --text TEXT
   status | peers | workers
   worker new [--agent NAME]   (generate one unique session per agent window)
   task status ID
@@ -82,6 +87,8 @@ func Run(args []string) error {
 		return nil
 	case "mcp":
 		return serveMCP(home, args[1:])
+	case "session", "bind", "bindings", "unbind":
+		return serveSessions(home, args)
 	case "wake":
 		return serveWake(home, args[1:])
 	case "init", "configure":
@@ -151,6 +158,8 @@ func Run(args []string) error {
 	fs.StringVar(&a.Session, "session", "", "local session alias")
 	fs.StringVar(&a.ToSession, "to-session", "", "target session alias")
 	fs.StringVar(&a.Conversation, "conversation", "", "shared task/conversation label")
+	fs.StringVar(&a.Channel, "channel", "", "bound channel; resolves exact chat recipient")
+	fs.BoolVar(&a.All, "all", false, "explicit fanout to accepted channel members; separate tasks per recipient")
 	fs.StringVar(&a.ReplyTo, "reply-to", "", "related message ID")
 	fs.StringVar(&a.Path, "path", "", "file to send")
 	fs.Int64Var(&a.After, "after", 0, "local sequence cursor; wait -1 starts at current tail")
@@ -173,6 +182,11 @@ func Run(args []string) error {
 		}
 		if a.Path == "" {
 			return errors.New("file path required")
+		}
+	}
+	if a.Channel != "" && a.Session == "" {
+		if e := currentSession(context.Background(), home, &a); e != nil {
+			return e
 		}
 	}
 	timeout := 75 * time.Second

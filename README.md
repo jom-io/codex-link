@@ -1,5 +1,7 @@
 # agent-link
 
+Persistent [chat registration and binding](docs/sessions.zh-CN.md) provide stable automatic aliases, explicit channel peers and reopen recovery through both CLI and MCP.
+
 Optional [inbox wake adapters](docs/wake.md) resume an explicitly bound chat on
 new tasks/results. DeepSeek Harness uses its process-native session API; a
 strictly bound macOS UI fallback is opt-in. Existing installations remain manual
@@ -45,7 +47,7 @@ git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
 git switch codex/agent-link-multi-harness
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.3 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0-rc.8 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers

@@ -148,3 +148,31 @@ func TestMCPSharedHostAllocatesDistinctChatSessions(t *testing.T) {
 		t.Fatal("unissued session accepted by another process")
 	}
 }
+
+func TestMCPPersistentChatAttachAcrossProcessRestart(t *testing.T) {
+	call := func(_ context.Context, _, op string, a link.APIRequest) (json.RawMessage, error) {
+		if op == "session/attach" {
+			if a.Session != "" || a.NativeSession == "" || a.Profile != "default" {
+				t.Fatal("process default impersonated a chat", a)
+			}
+			return json.Marshal(link.Endpoint{Session: "retained-" + a.NativeSession, Harness: "deepseek-harness"})
+		}
+		if a.Session != "retained-chat-one" {
+			t.Fatal("wrong retained session", a)
+		}
+		return json.RawMessage(`{"status":"claimed"}`), nil
+	}
+	for _, process := range []string{"process-one", "process-after-restart"} {
+		s := mcpServer{session: process, harness: "deepseek-harness", agent: "home-ds", write: true, call: call}
+		result, e := s.toolCall(context.Background(), "agent_link_session_attach", json.RawMessage(`{"native_session":"chat-one","harness":"deepseek-harness"}`))
+		if e != nil || result.(link.Endpoint).Session != "retained-chat-one" {
+			t.Fatal(result, e)
+		}
+		if _, e = s.toolCall(context.Background(), "agent_link_task_claim", json.RawMessage(`{"session":"retained-chat-one","id":"task"}`)); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = s.toolCall(context.Background(), "agent_link_task_claim", json.RawMessage(`{"session":"retained-chat-two","id":"task"}`)); e == nil {
+			t.Fatal("unattached different chat accepted")
+		}
+	}
+}

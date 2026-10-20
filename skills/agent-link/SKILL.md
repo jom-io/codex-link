@@ -28,9 +28,13 @@ Send normally. If the result is `pairing_pending`, the application displays a na
 
 CLI and MCP share local → confirmed private IPv4 LAN → Redis/OSS fallback routing. To reach another chat on this device use `--to self` (or this device name/ID) and its unique `--to-session`; no self-pairing is needed. `get`/inbox records report `route: local|lan|cloud`. A local send has one shared inbox row, so it becomes `received` rather than a separate outgoing `delivered` row. Task claims/completions still apply. Redis disconnection does not prevent local or reachable, cached LAN delivery. Initial LAN endpoint discovery/pairing uses Redis; do not claim zero-cloud discovery. Files are encrypted snapshots and queued asynchronously; only receipt/cache verification establishes arrival. MCP file permission gates are unchanged.
 
-## MCP sessions
+## Persistent chats and MCP sessions (rc.8+)
 
-When using MCP, call `agent_link_worker_new` once for each chat/window and retain its returned full session. Pass it as `session` on subsequent tools. DeepSeek desktop can share one MCP process across multiple chats, so the process-default context alone cannot distinguish those chats. To resume an active lease after a process restart, restart the adapter with `--session` set to that exact owner. This is routing, not access isolation.
+For a host that exposes THIS chat's native context, use `agent-link session attach --wake` once at first authorized use; Codex reads CODEX_THREAD_ID, DeepSeek reads DSH_SESSION_ID. It resumes the same worker across reopen/restart. Omit --name for a stable device/host/Beijing-time/short-ID alias. Keep device identities and existing full worker/native mappings; never create a replacement worker for an already bound chat.
+
+MCP chats call `agent_link_session_attach` with their actual host-provided native_session, harness and consistent profile; pass the returned full session on all later tools. Reattach after an MCP restart to recover it. A shared MCP process default does not identify a caller: never guess another chat or the most recent endpoint. If native context is unavailable, retain the legacy `worker_new` flow and its owner instead.
+
+Use `session list --to DEVICE`, then `session list` to refresh paired logical endpoints. `bind TARGET_ID --channel NAME` proposes scope; the exact receiving chat must accept that invitation with `bind --accept MESSAGE_ID`. `bindings` distinguishes invited/proposed/accepted and model verified_at. Invites/metadata do not wake models. Channel sends resolve exact device + worker; multiple peers require --to or explicit --all, which creates separate tasks. Pause/resume persists, leave never changes task ownership or deletes history. See [session workflow](references/sessions.zh-CN.md). Same-user routing is not access isolation. Native wake adds no execution or file permission.
 
 ## Communicate
 
@@ -75,7 +79,7 @@ Without an explicitly enabled local wake binding, an idle agent chat is not auto
 
 ## Worker liveness (v0.1.3+)
 
-At the start of each new work window run `agent-link worker new --agent NAME` once and retain the returned unique `session` throughout that window's work. Do not regenerate it on each tool call or reuse another window's value. Existing tasks retain their current owner until safely handed over or completed.
+When this host has no persistent native registration, at the start of each new work window run `agent-link worker new --agent NAME` once and retain the returned unique `session` throughout that window's work. Do not regenerate it on each tool call or reuse another window's value. Existing tasks retain their current owner until safely handed over or completed.
 
 Claiming or renewing automatically sends an encrypted activity update. During a claimed task call `worker pulse TASK_ID --session UNIQUE_SESSION --state working --stage "short non-sensitive stage"` at most 60 seconds apart when the window can actively poll. Use `waiting_user`, `blocked`, or `stopped` as appropriate. Pulse requires your active lease but does not renew it; renew explicitly with `task claim` before expiry. Never launch a detached infinite pulse loop: it would make a closed agent window appear alive. Stage text must contain no credentials or sensitive output.
 

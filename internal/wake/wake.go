@@ -21,6 +21,7 @@ import (
 )
 
 type Config struct {
+	Registry                   bool
 	Session, NativeSession     string
 	From, Conversations, Kinds []string
 	StatePath                  string
@@ -81,7 +82,7 @@ func (c *Config) Validate() error {
 	if !link.ValidLabel(c.Session) || c.NativeSession == "" || len(c.NativeSession) > 256 || strings.ContainsAny(c.NativeSession, "\x00\r\n") {
 		return errors.New("wake requires a unique worker session and a bound native chat ID")
 	}
-	if len(c.From) == 0 {
+	if len(c.From) == 0 && !c.Registry {
 		return errors.New("wake requires an explicit sender device allowlist")
 	}
 	for _, group := range [][]string{c.From, c.Conversations} {
@@ -175,7 +176,7 @@ func Open(ctx context.Context, c Config, call Call) (*Watcher, error) {
 		return nil, errors.New("wake cursor is ahead of this database; restore matching state or choose a new binding state")
 	}
 	for _, n := range w.state.Pending {
-		if !link.ValidLabel(n.ID) || n.Seq < 0 || !contains(c.From, n.From) || !contains(c.Kinds, n.Kind) || (len(c.Conversations) > 0 && !contains(c.Conversations, n.Conversation)) {
+		if !link.ValidLabel(n.ID) || n.Seq < 0 || (!c.Registry && (!contains(c.From, n.From) || !contains(c.Kinds, n.Kind) || (len(c.Conversations) > 0 && !contains(c.Conversations, n.Conversation)))) {
 			return nil, errors.New("invalid pending wake metadata")
 		}
 	}
@@ -246,7 +247,7 @@ func contains(values []string, target string) bool {
 	return false
 }
 
-func (w *Watcher) matches(r link.Record) bool {
+func (w *Watcher) legacyMatches(r link.Record) bool {
 	m := r.Message
 	if r.Direction != "in" || m.ToSession != w.config.Session || m.Activity != nil || m.Pair != nil || !contains(w.config.From, m.From) || !contains(w.config.Kinds, m.Kind) {
 		return false
@@ -276,7 +277,11 @@ func (w *Watcher) Scan(ctx context.Context) error {
 			if r.Seq <= w.state.Cursor {
 				return errors.New("nonmonotonic inbox cursor")
 			}
-			if w.matches(r) {
+			ok, err := w.matches(ctx, r)
+			if err != nil {
+				return err
+			}
+			if ok {
 				if len(w.state.Pending) >= 256 {
 					return w.save()
 				}
@@ -321,6 +326,23 @@ func (w *Watcher) event() Event {
 // Step never regards an expired heartbeat as proof that a chat is idle. A local
 // native adapter explicitly accepts, defers, or blocks each notification.
 func (w *Watcher) Step(ctx context.Context, deliver Deliver, now time.Time) (time.Duration, error) {
+	if w.config.Registry {
+		raw, e := w.call(ctx, "wake/eligible", link.APIRequest{Session: w.config.Session, NativeSession: w.config.NativeSession})
+		if e != nil {
+			return 3 * time.Second, e
+		}
+		var policy struct {
+			Paused bool `json:"paused"`
+			Wake   bool `json:"wake"`
+		}
+		if e = json.Unmarshal(raw, &policy); e != nil {
+			return 3 * time.Second, e
+		}
+		if policy.Paused || !policy.Wake {
+			w.state.Status = "paused"
+			return 3 * time.Second, w.save()
+		}
+	}
 	if err := w.Scan(ctx); err != nil {
 		return 3 * time.Second, err
 	}
@@ -339,7 +361,11 @@ func (w *Watcher) Step(ctx context.Context, deliver Deliver, now time.Time) (tim
 		if record.Message.ID != n.ID {
 			return 3 * time.Second, errors.New("queued message ID mismatch")
 		}
-		if w.matches(record) {
+		ok, err := w.matches(ctx, record)
+		if err != nil {
+			return 3 * time.Second, err
+		}
+		if ok {
 			pending = append(pending, n)
 		}
 	}
@@ -425,4 +451,28 @@ func (w *Watcher) Run(ctx context.Context, deliver Deliver) error {
 		}
 	}
 	return nil
+}
+
+func (w *Watcher) matches(ctx context.Context, r link.Record) (bool, error) {
+	if !w.config.Registry || !strings.HasPrefix(r.Message.Conversation, "channel-") {
+		return w.legacyMatches(r), nil
+	}
+	m := r.Message
+	if r.Direction != "in" || m.ToSession != w.config.Session || m.Activity != nil || m.Pair != nil {
+		return false, nil
+	}
+	if m.Kind == "task" && (r.Status == "completed" || (r.Owner != "" && r.Owner != w.config.Session && r.LeaseUntil > time.Now().Unix())) {
+		return false, nil
+	}
+	raw, e := w.call(ctx, "wake/eligible", link.APIRequest{Session: w.config.Session, NativeSession: w.config.NativeSession, ID: m.ID})
+	if e != nil {
+		return false, e
+	}
+	var policy struct {
+		Allowed bool `json:"allowed"`
+	}
+	if e = json.Unmarshal(raw, &policy); e != nil {
+		return false, e
+	}
+	return policy.Allowed, nil
 }

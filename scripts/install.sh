@@ -110,7 +110,7 @@ fi
 if [ -n "$agent_name" ]; then
   for dir in "$skill_dir" "$legacy_skill_dir"; do
     mkdir -p "$dir/references"
-    printf '# Local agent identity\n\nThis installed Skill belongs to `%s`. Create a window with `agent-link worker new --agent %s`, then retain its unique full session. Keep device identities unchanged. A separate harness may use a different agent name.\n' "$agent_name" "$agent_name" > "$dir/references/local-agent.md"
+    printf '# Local agent identity\n\nThis installed Skill belongs to `%s`. Register/resume this native chat with `agent-link session attach --agent %s` (add --wake only when authorized). Retain its returned full session. If this host cannot provide native context, use worker new once instead. Keep device identities unchanged. A separate harness may use a different agent name.\n' "$agent_name" "$agent_name" > "$dir/references/local-agent.md"
   done
 fi
 if [ "$restart" -eq 1 ]; then

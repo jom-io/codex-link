@@ -4,6 +4,8 @@ const revision = new URL(import.meta.url).search;
 const { startNativeBridge, UnsupportedNativeAPI } = await import(new URL('./native-host.mjs' + revision, import.meta.url));
 const { inspectMacOSChat, submitMacOSChat, validateUI } = await import(new URL('./macos-ui.mjs' + revision, import.meta.url));
 
+const { startSessionManager } = await import(new URL('./session-host.mjs' + revision, import.meta.url));
+
 export const name = 'agent-link-wake';
 // Cordis 4 maps object keys to service names. A legacy { optional: [...] }
 // declaration would wait forever for a service literally named "optional".
@@ -55,8 +57,7 @@ export function createDeepSeekHost(controller, config) {
 export function apply(ctx, config = {}) {
   if (config.enabled !== true) return;
   const logger = message => ctx.logger?.info?.(message);
-  const host = createDeepSeekHost(ctx.sessionController, config);
-  const bridge = startNativeBridge(config, host, logger);
+  const bridge = startSessionManager(config, binding => createDeepSeekHost(ctx.sessionController, binding), startNativeBridge, logger);
   // The host owns the child lifecycle. HMR/disable/unload terminates only this
   // plugin's listener and never cancels a model turn or another application.
   if (typeof ctx.effect === 'function') ctx.effect(() => () => bridge.dispose());

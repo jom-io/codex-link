@@ -226,3 +226,52 @@ func TestConversationAllowlistCooldownAndRateLimit(t *testing.T) {
 		t.Fatal("rate limit never recovered", e, w.state)
 	}
 }
+
+func TestRegistryPauseRetainsQueueAndRevalidatesExactScope(t *testing.T) {
+	ctx := context.Background()
+	c := config(t)
+	c.Registry = true
+	c.From = nil
+	f := &inboxFixture{rows: []link.Record{record(1, "task"), record(2, "task")}}
+	for i := range f.rows {
+		f.rows[i].Message.Conversation = "channel-room"
+	}
+	paused := false
+	allowed := map[string]bool{"m-1": true, "m-2": false}
+	call := func(ctx context.Context, op string, a link.APIRequest) (json.RawMessage, error) {
+		if op == "wake/eligible" {
+			return json.Marshal(map[string]any{"paused": paused, "wake": true, "allowed": allowed[a.ID]})
+		}
+		return f.call(ctx, op, a)
+	}
+	w, e := Open(ctx, c, call)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer w.Close()
+	_, e = w.Step(ctx, func(_ context.Context, event Event) (Ack, error) {
+		if len(event.Messages) != 1 || event.Messages[0].ID != "m-1" {
+			t.Fatal("wrong source in dynamic scope", event)
+		}
+		return Ack{ID: event.ID, Status: "busy"}, nil
+	}, time.Now())
+	if e != nil {
+		t.Fatal(e)
+	}
+	paused = true
+	before := w.Snapshot()
+	_, e = w.Step(ctx, func(context.Context, Event) (Ack, error) { t.Fatal("paused chat was woken"); return Ack{}, nil }, time.Now())
+	if e != nil || len(w.state.Pending) != len(before.Pending) || w.state.Cursor != before.Cursor {
+		t.Fatal("pause discarded pending work", e, w.state)
+	}
+	paused = false
+	allowed["m-1"] = false // membership revoked while the host was busy
+	_, e = w.Step(ctx, func(context.Context, Event) (Ack, error) { t.Fatal("revoked source was woken"); return Ack{}, nil }, time.Now())
+	if e != nil || len(w.state.Pending) != 0 {
+		t.Fatal(e, w.state)
+	}
+	// All underlying messages stay in the shared inbox, regardless of wake policy.
+	if len(f.rows) != 2 {
+		t.Fatal("history changed")
+	}
+}
