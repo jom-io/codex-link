@@ -18,7 +18,7 @@ type bindingProbe struct {
 }
 
 func (d *Daemon) probeBinding(ctx context.Context, b Binding) error {
-	key := "binding-probe:" + bindingKey(b)
+	key := "binding-native-probe:" + bindingKey(b)
 	if d.Store.metadata(ctx, key) == Version {
 		return nil
 	}
@@ -34,6 +34,10 @@ func (d *Daemon) probeBinding(ctx context.Context, b Binding) error {
 	}
 	if e := d.Store.Enqueue(ctx, m); e != nil {
 		return e
+	}
+	if b.VerifiedEvent == "" {
+		b.VerifiedAt = time.Time{}
+		b.VerifiedVersion = ""
 	}
 	b.ProbeID = m.ID
 	b.ProbeVersion = Version
@@ -70,7 +74,12 @@ func (d *Daemon) verifyProbe(ctx context.Context, a APIRequest) (any, error) {
 	if !policy.(map[string]any)["allowed"].(bool) {
 		return nil, errors.New("probe source is not accepted in this channel")
 	}
-	text := probePrefix + p.Nonce
+	var admission nativeAdmission
+	if json.Unmarshal([]byte(d.Store.metadata(ctx, "native-admission:"+m.ID)), &admission) != nil || admission.Session != ep.Session || admission.Native != ep.NativeSession || !ValidLabel(admission.Event) {
+		return nil, errors.New("probe has no native notification admission for this chat; wait for the queued idle wake, do not verify from the current polling turn")
+	}
+	proof, _ := json.Marshal(probeReply{Nonce: p.Nonce, Event: admission.Event})
+	text := probePrefix + string(proof)
 	result := d.base(m.From, "result")
 	result.Session = ep.Session
 	result.ToSession = m.Session
@@ -90,7 +99,8 @@ func (d *Daemon) receiveProbeResult(ctx context.Context, m Message) error {
 		return nil
 	}
 	var p bindingProbe
-	if json.Unmarshal([]byte(d.Store.metadata(ctx, "probe:"+m.ReplyTo)), &p) != nil || m.Text != probePrefix+p.Nonce {
+	var reply probeReply
+	if json.Unmarshal([]byte(d.Store.metadata(ctx, "probe:"+m.ReplyTo)), &p) != nil || json.Unmarshal([]byte(strings.TrimPrefix(m.Text, probePrefix)), &reply) != nil || reply.Nonce != p.Nonce || !ValidLabel(reply.Event) || len(reply.Event) != 32 {
 		return nil
 	}
 	q, e := d.Store.Get(ctx, m.ReplyTo)
@@ -107,5 +117,39 @@ func (d *Daemon) receiveProbeResult(ctx context.Context, m Message) error {
 	}
 	b.VerifiedAt = time.Now().UTC()
 	b.VerifiedVersion = p.Version
+	b.VerifiedEvent = reply.Event
 	return d.Store.saveValue(ctx, bindingKey(b), b)
+}
+
+type nativeAdmission struct {
+	Session    string    `json:"session"`
+	Native     string    `json:"native"`
+	Event      string    `json:"event"`
+	AcceptedAt time.Time `json:"accepted_at"`
+}
+type probeReply struct {
+	Nonce string `json:"nonce"`
+	Event string `json:"event"`
+}
+
+func (d *Daemon) markNativeAdmission(ctx context.Context, ep Endpoint, a APIRequest) (any, error) {
+	if len(a.Messages) < 1 || len(a.Messages) > 20 || !ValidLabel(a.Code) || len(a.Code) != 32 {
+		return nil, errors.New("invalid native admission metadata")
+	}
+	for _, id := range a.Messages {
+		r, e := d.Store.Get(ctx, id)
+		if e != nil {
+			return nil, e
+		}
+		if r.Direction != "in" || r.Message.ToSession != ep.Session {
+			return nil, errors.New("native admission targets another chat")
+		}
+	}
+	for _, id := range a.Messages {
+		v := nativeAdmission{Session: ep.Session, Native: ep.NativeSession, Event: a.Code, AcceptedAt: time.Now().UTC()}
+		if e := d.Store.saveValue(ctx, "native-admission:"+id, v); e != nil {
+			return nil, e
+		}
+	}
+	return map[string]string{"status": "native_admission_recorded"}, nil
 }

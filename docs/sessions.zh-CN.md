@@ -67,7 +67,9 @@ agent-link bind --accept INVITATION_MESSAGE_ID
 
 接受后自动排队非秘密探针。目标模型在真实聊天中认领探针自己的任务 ID，
 执行 `agent-link session verify --probe ID --session RETAINED_WORKER`，返回匹配
-随机值后，发起方 bindings 的 `verified_at` 才更新。`accepted` 只是绑定完成，
+随机值后，发起方 bindings 的 `verified_at` 才更新。原生适配器还必须先为这条
+通知保存本机 admission 记录；当前活跃回合主动轮询收到探针不能完成验证。
+`verified_event` 关联具体原生通知，记录接口不对 MCP 模型工具开放。`accepted` 只是绑定完成，
 接收器 connected 是本机原生连接观察，均不等于模型完成。版本变化会在接收器
 重新接入时排队一次探针；普通重开不重复。新失败应结合 wake status 与原生
 日志诊断；不要把旧的成功时间或 daemon 在线当作模型此刻可用。

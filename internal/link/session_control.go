@@ -228,6 +228,9 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 			if a.NativeSession != ep.NativeSession {
 				return nil, errors.New("native identity mismatch")
 			}
+			if a.State == "admitted" {
+				return d.markNativeAdmission(ctx, ep, a)
+			}
 			if a.State != "connected" && a.State != "unavailable" {
 				return nil, errors.New("invalid receiver state")
 			}

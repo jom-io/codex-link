@@ -1,6 +1,8 @@
 // Local host-side adapter for `agent-link wake watch`. No message body or remote
 // command becomes executable input. A harness supplies its own native chat API.
-import { spawn } from 'node:child_process';
+import { spawn, execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFile = promisify(execFileCallback);
 import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename, mkdir, chmod } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
@@ -111,6 +113,11 @@ export function startNativeBridge(config, host, logger = () => {}) {
         if (!ready) throw new Error('Wake listener was not initialized');
         const signal = AbortSignal.any([cancellation.signal, AbortSignal.timeout(10000)]);
         const ack = await dispatcher.dispatch(event, signal);
+        if (ack.status === 'accepted' && config.registry === true) {
+          try { await execFile(config.cliPath, ['session', 'receiver', '--session', config.session, '--native-session', config.nativeSessionId,
+            '--state', 'admitted', '--event', event.id, '--messages', event.messages.map(m => m.id).join(',')], { timeout: 4000, maxBuffer: 16384 }); }
+          catch { logger('Native notification accepted but admission proof could not be saved; model verification remains pending'); }
+        }
         if (!cancellation.signal.aborted) child.stdin.write(JSON.stringify(ack) + '\n');
       }
     } catch { logger('Wake protocol stopped; queued messages are retained'); child.kill('SIGTERM'); }

@@ -190,6 +190,7 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
+	Messages      []string `json:"messages,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Agent         string   `json:"agent,omitempty"`
 	Harness       string   `json:"harness,omitempty"`

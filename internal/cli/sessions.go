@@ -107,6 +107,9 @@ func serveSessions(home string, args []string) error {
 	fs.StringVar(&a.Channel, "channel", "", "cooperation channel name or ID")
 	fs.StringVar(&a.ID, "probe", "", "exact received binding probe task ID; claim first")
 	fs.StringVar(&a.ID, "accept", "", "accept this exact invitation in the current chat")
+	var messages string
+	fs.StringVar(&messages, "messages", "", "native adapter admitted message IDs, comma separated")
+	fs.StringVar(&a.Code, "event", "", "native adapter admission event ID")
 	fs.StringVar(&a.State, "state", "", "local receiver state")
 	fs.StringVar(&a.Path, "state-path", "", "existing private wake queue to retain on import")
 	fs.BoolVar(&a.EnableWake, "wake", false, "enable this chat's native receiver")
@@ -129,6 +132,9 @@ func serveSessions(home string, args []string) error {
 		return errors.New("unexpected session arguments")
 	}
 	a.Targets = targets
+	if messages != "" {
+		a.Messages = strings.Split(messages, ",")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	if op == "session/attach" {

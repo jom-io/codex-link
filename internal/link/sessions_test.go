@@ -170,6 +170,12 @@ func TestSessionBindingHandshakeFanoutScopeAndRealProbe(t *testing.T) {
 	if e = b.Store.Claim(ctx, probe.ID, home1.Session, 60); e != nil {
 		t.Fatal(e)
 	}
+	if _, e = b.verifyProbe(ctx, APIRequest{ID: probe.ID, Session: home1.Session}); e == nil {
+		t.Fatal("polling model reply was mistaken for native wake")
+	}
+	if _, e = b.markNativeAdmission(ctx, home1, APIRequest{Messages: []string{probe.ID}, Code: NewID()}); e != nil {
+		t.Fatal(e)
+	}
 	if _, e = b.verifyProbe(ctx, APIRequest{ID: probe.ID, Session: home1.Session}); e != nil {
 		t.Fatal(e)
 	}

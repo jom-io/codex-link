@@ -36,6 +36,7 @@ type Endpoint struct {
 type Binding struct {
 	ProbeID         string    `json:"probe_id,omitempty"`
 	ProbeVersion    string    `json:"probe_version,omitempty"`
+	VerifiedEvent   string    `json:"verified_event,omitempty"`
 	VerifiedVersion string    `json:"verified_version,omitempty"`
 	Channel         string    `json:"channel"`
 	ChannelName     string    `json:"channel_name"`

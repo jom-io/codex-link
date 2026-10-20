@@ -70,6 +70,9 @@ export async function attachCodex(ep, { cliPath = process.env.AGENT_LINK_CLI_PAT
     } catch { /* state files aren't adapter configs */ }
   }
   config.registry = true; config.enabled = true; config.cliPath = cliPath;
+  const revision = createHash('sha256');
+  for (const file of ['codex-desktop.mjs', 'codex-ipc.mjs', 'native-host.mjs', 'session-host.mjs', 'launchd.mjs']) revision.update(await readFile(new URL(file, import.meta.url)));
+  config.adapterRevision = revision.digest('hex');
   const host = await createCodexHost(config); const check = await host.check(AbortSignal.timeout(10000));
   if (check.uncertain_admission) throw new Error('Native admission needs review before registration');
   const path = join(home, 'wake', 'endpoint-' + ep.id + '.binding.json');
