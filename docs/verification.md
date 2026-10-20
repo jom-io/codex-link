@@ -50,9 +50,11 @@ rc.7 uses the local owner's normal turn path with cloud admission disabled.
   therefore passed real automatic-model wake. This particular two-Mac exchange
   used `cloud`; it is not an additional local/LAN transport test.
 
-The same Codex adapter is installed on home for reuse, but home-codex itself
-remains unbound and its real-model acceptance is deferred for the known network
-issue. Office's current binding permits the paired home device and this test
+At this rc.7 checkpoint, the same Codex adapter was installed on home for reuse,
+but home-codex remained unbound and real-model acceptance was deferred for its
+network issue. The later rc.8 registration and real bidirectional Codex wake
+results are recorded in [session binding acceptance](session-binding-verification.zh-CN.md).
+Office's checkpoint binding permits the paired home device and this test
 conversation; other chats/conversations need their own configured binding/scope.
 Codex desktop protocol v11 was checked on bundled codex-cli
 `0.163.0-alpha.10.2`. Internal-protocol compatibility, an idle-check race with a
