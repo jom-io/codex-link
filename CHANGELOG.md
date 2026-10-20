@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0-rc.7
+
+- Use normal native turn submission for local Codex chats. The cloud-only
+  user-message-admission extension caused a visible prompt followed by a native
+  validation error without starting a model turn.
+- Keep explicitly verified rejections in the admission journal. Unknown
+  outcomes remain quarantined and are never automatically reset or retried.
+
 ## v0.2.0-rc.6
 
 - Add an opt-in Codex desktop native adapter that discovers the selected chat's

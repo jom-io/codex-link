@@ -40,7 +40,7 @@ export class CodexSubmissions {
     if (!await privateFile(this.path, true)) return;
     const s = JSON.parse(await readFile(this.path, 'utf8'));
     if (s.session !== this.config.session || s.nativeSessionId !== this.config.nativeSessionId ||
-        !Array.isArray(s.entries) || s.entries.length > 128 || !s.entries.every(e => /^[a-f0-9]{32}$/.test(e.id) && ['intent', 'accepted'].includes(e.status))) {
+        !Array.isArray(s.entries) || s.entries.length > 128 || !s.entries.every(e => /^[a-f0-9]{32}$/.test(e.id) && ['intent', 'accepted', 'rejected'].includes(e.status))) {
       throw new Error('Invalid Codex submission journal or changed binding');
     }
     this.entries = s.entries;
@@ -48,7 +48,7 @@ export class CodexSubmissions {
   get(id) { return this.entries.find(e => e.id === id)?.status; }
   uncertain() { return this.entries.some(e => e.status === 'intent'); }
   async record(id, status) {
-    if (!/^[a-f0-9]{32}$/.test(id) || !['intent', 'accepted'].includes(status)) throw new Error('Invalid native admission entry');
+    if (!/^[a-f0-9]{32}$/.test(id) || !['intent', 'accepted', 'rejected'].includes(status)) throw new Error('Invalid native admission entry');
     this.entries = [...this.entries.filter(e => e.id !== id), { id, status }].slice(-128);
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
     await privateFile(this.path, true); await privateFile(this.path + '.tmp', true);
@@ -93,7 +93,9 @@ export async function createCodexHost(config, { chat = withCodexChat } = {}) {
           turnStart: {
             request: { threadId: id, clientUserMessageId: 'agent-link-wake-' + eventId,
               input: [{ type: 'text', text: prompt, text_elements: [] }] },
-            context: { inheritThreadSettings: true, useUserMessageAdmission: true },
+            // The user-message-admission extension is cloud-host-only on the
+            // inspected desktop version. Local chats use normal turn/start.
+            context: { inheritThreadSettings: true, useUserMessageAdmission: false },
           },
         }, 2, owner, signal, 8000);
         if (typeof response.result?.result?.turn?.id !== 'string') throw new Error('Codex did not confirm native turn admission');

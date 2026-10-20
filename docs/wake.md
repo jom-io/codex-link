@@ -146,6 +146,12 @@ enable/start it again. Changed worker/chat/filter bindings need separate state
 files. Git upgrades should reinstall the shipped adapters, check compatibility,
 and restart only that binding. No full desktop restart is necessary.
 
+Local Codex chats use the owning window's normal `turn/start` path with
+`useUserMessageAdmission: false`. That desktop version's user-message-admission
+extension requires a cloud app-server host; enabling it on a local chat can
+display a prompt and then fail without a model turn. A visible prompt alone
+therefore does not establish a successful wake.
+
 The shared wake queue waits while the native chat is active. Submission obtains
 a fresh native snapshot too; a busy transition detected there defers the event.
 Codex owns final user-message admission; a simultaneous human prompt after that
@@ -160,8 +166,12 @@ native submission and acceptance after confirmation. If submission times out,
 disconnects, or fails after intent is recorded, the binding defers subsequent
 notifications instead of blindly retrying or switching to UI. `check` reports
 `uncertain_admission: true`; inspect the exact chat and native message ID before
-manually resolving that journal. Do not delete an intent just to make a test
-green. Admission, native listener readiness and real model completion must be
+manually resolving that journal. Stop the binding first. Only if the exact
+native message ID has a verified validation rejection, failed status and no
+model turn ID may an operator back up the journal and mark that intent
+`rejected`; retain the entry and the evidence. Timeouts, a missing visible reply
+or uncertainty do not justify that transition. Do not delete an intent just
+to make a test green. Admission, native listener readiness and real model completion must be
 verified separately. Two-way automatic wake requires a working binding on both
 receiving chats, followed by a fresh task/result without human input on either.
 

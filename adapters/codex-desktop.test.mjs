@@ -32,6 +32,13 @@ async function fixture(t, overrides = {}) {
         const size = buffer.readUInt32LE(0), m = JSON.parse(buffer.subarray(4, size + 4)); buffer = buffer.subarray(size + 4);
         if (m.type === 'request') {
           calls.push(m);
+          // Native desktop conformance: this local owner cannot use the cloud
+          // user-message-admission extension (observed in the real desktop).
+          if (m.method === 'thread-follower-start-turn' && m.params.turnStart.context.useUserMessageAdmission) {
+            send({ type: 'response', requestId: m.requestId, resultType: 'error',
+              error: 'User-message admission requires a cloud app-server host' });
+            continue;
+          }
           send({ type: 'response', requestId: m.requestId, method: m.method, handledByClientId: 'real-owner', resultType: 'success',
             result: m.method === 'initialize' ? { clientId: 'observer' } : m.method === 'thread-owner-discovery'
               ? { supportsUntrustedAppInput: true } : { result: { turn: { id: 'accepted-turn', status: 'inProgress' } } } });
@@ -66,7 +73,7 @@ test('Codex wake uses only fixed retrieval input, inherits settings and durably 
   assert.equal(call.targetClientId, 'real-owner'); assert.equal(call.version, 2);
   assert.equal(call.params.conversationId, native);
   assert.deepEqual(Object.keys(call.params.turnStart.request).sort(), ['clientUserMessageId', 'input', 'threadId']);
-  assert.deepEqual(call.params.turnStart.context, { inheritThreadSettings: true, useUserMessageAdmission: true });
+  assert.deepEqual(call.params.turnStart.context, { inheritThreadSettings: true, useUserMessageAdmission: false });
   const prompt = call.params.turnStart.request.input[0].text;
   assert.match(prompt, /exact-message-id/); assert.doesNotMatch(prompt, /UNTRUSTED REMOTE BODY/);
   const restarted = await createCodexHost(f.c);
@@ -106,6 +113,20 @@ test('unknown native admission is quarantined across process restart without ret
   assert.equal(await restarted.inspect(native), 'waiting_user');
   await assert.rejects(restarted.submit(native, 'fixed nudge', undefined, id), { code: 'NATIVE_WAITING_USER' });
   assert.equal(f.calls.length, 0);
+});
+
+test('an explicitly verified rejected intent can be retained without blocking other notifications', async t => {
+  const f = await fixture(t), id = 'f'.repeat(32);
+  const journal = new CodexSubmissions(f.c);
+  await journal.record(id, 'intent');
+  assert.equal((await createCodexHost(f.c)).journal.uncertain(), true);
+  // This transition is a local operator decision after checking the exact
+  // native error and null turn ID, never a timeout or an automatic reset.
+  await journal.record(id, 'rejected');
+  const restarted = await createCodexHost(f.c);
+  assert.equal(restarted.journal.get(id), 'rejected');
+  assert.equal(await restarted.inspect(native), 'idle');
+  assert.equal(JSON.parse(await readFile(journal.path)).entries[0].id, id);
 });
 
 test('Codex wrong identity, private socket and protocol checks fail closed', async t => {
