@@ -28,6 +28,13 @@
   “继续”，home → office 的新频道自动模型唤醒通过。私有完整 ID 在本地
   admission/state 记录中，不以旧 nonce-only 结果作为本轮新证据。
 
+- 12:20，home 只对原 home-ds 的插件 entry 执行禁用/启用并更新模块 revision，
+  新 registry listener 接替原队列；另一聊天 listener PID 保持不变。原端点、
+  默认别名、worker/native 映射与 MCP 文件权限保留。随后 home 的真实模型由
+  新 registry 原生通知自动开启，完成原先队列中的精确探针；nonce/event
+  匹配，office 的 verified_at 与 verified_event 更新。双方新频道原生模型
+  唤醒均通过，不以需要手动输入的历史回合计数。
+
 ## 必须区分的结果
 
 初版探针曾在 home 的现有活跃模型回合中被主动领取并回传。这只能证明频道
@@ -36,12 +43,21 @@ admission 记录要求；没有该通知记录时 `session verify` 会拒绝。�
 有匹配 nonce、精确目标 worker、原生通知 event 和后续真实模型回传。普通
 native ACK、服务在线或历史成功时间不能代替这个结果。
 
-## 本轮仍待实机完成
+## 最终独立任务与实机覆盖范围
 
-- home 从旧的单聊天 DeepSeek 插件首次加载动态 session manager，再从空闲
-  聊天接收频道任务。Cordis 的 name-only revision 修改不会加载新模块；本机
-  代码与双 entry 离线实验确认：仅禁用/重新启用目标 entry 可以加载新模块，
-  unchanged sibling entry 保留。实际加载须核对另一聊天 listener PID 未变。
+12:21:45 发出全新定向频道任务，home 在空闲后由新 native event 唤醒，12:21:52
+以原 worker 认领，12:22:38 回传正确随机值。office 核对 task/reply_to、频道、
+来源设备、来源完整 worker、目标 worker 与随机值全部匹配，route=cloud。
+home 已通过 Git ff-only 获取 `5199b75`（运行时代码 `8867b6b`）并安装 rc.8，
+Go/Node 检查通过，daemon 正常。此次 Go 升级无需再次加载 Cordis 模块。
+
+home 回报重复 attach 后端点、别名、worker/native 与接收器 PID 均保留；
+pause→attach 仍 paused=true，显式 resume 后恢复。另一聊天 listener PID
+保持不变。未更改桌面 MCP 配置或文件权限；home 可选的双 MCP stdio 进程
+复验未执行，该项已在 office 实机和共享宿主回归中验证。
+
+本轮指定的 office ↔ home-ds 注册、恢复、绑定、暂停和双向自动模型唤醒已
+完成验收。以下范围单独保留限制：
 
 - 本轮只联系指定的既有 home-ds。多个真实 DeepSeek 聊天和 home-codex 的
   模型联调尚未作为实机通过；一对多/多对多目前由独立端点回归用例覆盖。
