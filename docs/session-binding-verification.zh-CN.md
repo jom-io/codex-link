@@ -22,6 +22,12 @@
 - office 的 4,640 条基线消息，缺失 0、正文/方向改变 0，agent-link 配置摘要
   不变，SQLite integrity_check 为 ok。既有 native 队列与去重日志保留。
 
+- 12:16:30，office 在上一回合结束后由 registry 原生通知启动新回合。通知
+  event 与本机 admission、accepted 提交日志匹配；12:16:55 原 worker 认领
+  并完成精确探针，匹配 nonce/event 的 result 经 cloud 送达 home。无手动
+  “继续”，home → office 的新频道自动模型唤醒通过。私有完整 ID 在本地
+  admission/state 记录中，不以旧 nonce-only 结果作为本轮新证据。
+
 ## 必须区分的结果
 
 初版探针曾在 home 的现有活跃模型回合中被主动领取并回传。这只能证明频道
@@ -36,8 +42,7 @@ native ACK、服务在线或历史成功时间不能代替这个结果。
   聊天接收频道任务。Cordis 的 name-only revision 修改不会加载新模块；本机
   代码与双 entry 离线实验确认：仅禁用/重新启用目标 entry 可以加载新模块，
   unchanged sibling entry 保留。实际加载须核对另一聊天 listener PID 未变。
-- office 当前回合运行时，原生通知正确保持 busy/pending；须待本回合结束后
-  由原生通知发起新的真实回合，才能完成反向频道唤醒验收。
+
 - 本轮只联系指定的既有 home-ds。多个真实 DeepSeek 聊天和 home-codex 的
   模型联调尚未作为实机通过；一对多/多对多目前由独立端点回归用例覆盖。
   home-codex 网络限制不因 daemon 在线而解除。

@@ -24,7 +24,10 @@ Codex 使用当前进程的 `CODEX_THREAD_ID`，DeepSeek 使用 `DSH_SESSION_ID`
 首次加载动态插件时导入配置中的原 worker/native ID，不创建替代身份。它的
 新插件只需要加载一次，后续同一 profile 的聊天注册动态生效，无需再为每个
 聊天编辑 Cordis patch。首次从旧插件切到新插件仍需宿主加载新模块；复制
-文件不等于已加载，宿主版本不支持外部配置热加载时需一次设置应用或重载。
+文件不等于已加载。已验收 DSH 的 Cordis loader 仅改 name revision 不会加载
+运行中的新模块；首次迁移需仅禁用目标 entry 并应用，再启用该 entry、修改
+revision 并应用。未变化的 sibling entry 保留；操作前后仍核对其 listener。
+新动态管理器加载后，新聊天注册不再重复这两步。
 
 Codex 的 `--wake` 自动核对本机原生 owner，并安装这个聊天自己的 sidecar；
 重复 attach 复用已有运行监听器。保留旧队列、原生提交日志和去重记录。原生
