@@ -112,7 +112,7 @@ func (d *Daemon) receiveProbeResult(ctx context.Context, m Message) error {
 		return e
 	}
 	old := q.Message
-	if q.Direction != "out" || old.Session != m.ToSession || old.To != m.From || old.ToSession != m.Session || old.Conversation != m.Conversation {
+	if !d.sentRecord(q) || old.Session != m.ToSession || old.To != m.From || old.ToSession != m.Session || old.Conversation != m.Conversation {
 		return nil
 	}
 	var b Binding

@@ -239,3 +239,114 @@ func TestSessionBindingHandshakeFanoutScopeAndRealProbe(t *testing.T) {
 		t.Fatal("result lost on leave", policy, e)
 	}
 }
+
+func deliverLocalTest(t *testing.T, d *Daemon) {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i < 10; i++ {
+		rows, e := d.Store.Pending(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		delivered := 0
+		for _, r := range rows {
+			if r.Message.To == d.Config.DeviceID {
+				if e = d.deliverOutgoing(ctx, r.Message); e != nil {
+					t.Fatal(e)
+				}
+				delivered++
+			}
+		}
+		if delivered == 0 {
+			return
+		}
+	}
+	t.Fatal("local delivery did not settle")
+}
+
+func TestLocalSessionProbeVerificationAndResultAfterLeave(t *testing.T) {
+	ctx := context.Background()
+	d, _ := pairedRoutingDaemons(t, "127.0.0.1:1")
+	v, e := d.dispatch(ctx, "/v1/session/attach", APIRequest{Harness: "codex", Profile: "default", NativeSession: "local-codex", EnableWake: true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	codex := v.(Endpoint)
+	ds := attachTest(t, d, "local-ds")
+	v, e = d.dispatch(ctx, "/v1/bind", APIRequest{Session: codex.Session, Channel: "local-dev", Targets: []string{ds.ID}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	invite := v.([]Binding)[0]
+	deliverLocalTest(t, d)
+	if _, e = d.dispatch(ctx, "/v1/bind", APIRequest{Session: ds.Session, ID: invite.InviteID}); e != nil {
+		t.Fatal(e)
+	}
+	deliverLocalTest(t, d)
+	for _, pair := range [][2]Endpoint{{codex, ds}, {ds, codex}} {
+		bs, e := d.Store.Bindings(ctx, pair[0].Session)
+		if e != nil || len(bs) != 1 || bs[0].Status != "accepted" {
+			t.Fatal(bs, e)
+		}
+		probe := bs[0].ProbeID
+		r, e := d.Store.Get(ctx, probe)
+		if e != nil || r.Direction != "in" || r.Route != "local" || r.Message.ToSession != pair[1].Session {
+			t.Fatal("local task must use its single shared received row", r, e)
+		}
+		if _, e = d.dispatch(ctx, "/v1/task/claim", APIRequest{ID: probe, Session: pair[1].Session, Lease: 60}); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = d.verifyProbe(ctx, APIRequest{ID: probe, Session: pair[1].Session}); e == nil {
+			t.Fatal("local polling bypassed native admission")
+		}
+		event := NewID()
+		if _, e = d.markNativeAdmission(ctx, pair[1], APIRequest{Messages: []string{probe}, Code: event}); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = d.verifyProbe(ctx, APIRequest{ID: probe, Session: pair[1].Session}); e != nil {
+			t.Fatal(e)
+		}
+		deliverLocalTest(t, d)
+		bs, e = d.Store.Bindings(ctx, pair[0].Session)
+		if e != nil || len(bs) != 1 || bs[0].VerifiedAt.IsZero() || bs[0].VerifiedEvent != event || bs[0].VerifiedVersion != Version {
+			t.Error("native local proof did not verify its exact binding", bs, e)
+		}
+	}
+	// Leaving preserves an in-flight result addressed to its original requester.
+	v, e = d.dispatch(ctx, "/v1/send", APIRequest{Session: codex.Session, Channel: "local-dev", To: ds.ID, Kind: "task", Text: "local in-flight task"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	id := v.(map[string]any)["id"].(string)
+	deliverLocalTest(t, d)
+	if _, e = d.dispatch(ctx, "/v1/task/claim", APIRequest{ID: id, Session: ds.Session, Lease: 60}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = d.dispatch(ctx, "/v1/unbind", APIRequest{Session: codex.Session, Channel: "local-dev"}); e != nil {
+		t.Fatal(e)
+	}
+	deliverLocalTest(t, d)
+	v, e = d.dispatch(ctx, "/v1/task/complete", APIRequest{ID: id, Session: ds.Session, Text: "local result after leave"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	replyID := v.(map[string]string)["reply_id"]
+	deliverLocalTest(t, d)
+	policy, e := d.wakeEligible(ctx, APIRequest{Session: codex.Session, NativeSession: codex.NativeSession, ID: replyID})
+	if e != nil || !policy.(map[string]any)["allowed"].(bool) {
+		t.Error("local in-flight result lost after leave", policy, e)
+	}
+	// A sibling on this same device cannot impersonate the task's actual worker.
+	sibling := attachTest(t, d, "local-unrelated")
+	forged := d.base(d.Config.DeviceID, "result")
+	forged.Text = "unrelated local result"
+	forged.Session, forged.ToSession, forged.Conversation, forged.ReplyTo = sibling.Session, codex.Session, invite.Channel, id
+	if e = d.Store.Enqueue(ctx, forged); e != nil {
+		t.Fatal(e)
+	}
+	deliverLocalTest(t, d)
+	policy, e = d.wakeEligible(ctx, APIRequest{Session: codex.Session, NativeSession: codex.NativeSession, ID: forged.ID})
+	if e != nil || policy.(map[string]any)["allowed"].(bool) {
+		t.Fatal("unrelated local worker inherited an in-flight result", policy, e)
+	}
+}

@@ -295,6 +295,15 @@ func (d *Daemon) resolveChannelRecipient(ctx context.Context, a APIRequest) (API
 	return a, nil
 }
 
+// Local delivery turns the sender's sole stored row into a received row for the
+// other chat. Only a self-addressed, locally delivered message retains that
+// sender-side meaning; an arbitrary incoming record must never qualify.
+func (d *Daemon) sentRecord(r Record) bool {
+	m := r.Message
+	return m.From == d.Config.DeviceID && (r.Direction == "out" ||
+		r.Direction == "in" && r.Route == "local" && m.To == d.Config.DeviceID)
+}
+
 // Registry policy is rechecked immediately before native admission. A pause does
 // not advance the cursor or discard pending notices. A leave never opens a room
 // again, but an exact reply to an old outgoing task can still notify its owner.
@@ -328,7 +337,7 @@ func (d *Daemon) wakeEligible(ctx context.Context, a APIRequest) (any, error) {
 		if !allowed && m.Kind == "result" && m.ReplyTo != "" {
 			if old, e := d.Store.Get(ctx, m.ReplyTo); e == nil {
 				q := old.Message
-				allowed = old.Direction == "out" && q.Kind == "task" && q.Session == a.Session && q.To == m.From && q.ToSession == m.Session && q.Conversation == m.Conversation
+				allowed = d.sentRecord(old) && q.Kind == "task" && q.Session == a.Session && q.To == m.From && q.ToSession == m.Session && q.Conversation == m.Conversation
 			}
 		}
 	}
