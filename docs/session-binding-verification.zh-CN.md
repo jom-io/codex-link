@@ -133,3 +133,6 @@ office 两条已接受关系的验证状态也均更新为 rc.9。用户除首�
 
 既有 rc.7 双向模型唤醒、local 文件及 LAN 验收见 verification.md；不把那些
 结果重复计作本轮新频道/动态注册的验收。
+
+后续 rc.10 对活跃回合已处理回执的重复唤醒修复与双向实机验收，见
+[已处理回执验收](handled-wake-verification.zh-CN.md)。
