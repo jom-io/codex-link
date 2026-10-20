@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2.0-rc.6
+
+- Add an opt-in Codex desktop native adapter that discovers the selected chat's
+  actual owning window over the existing private local coordination socket.
+  Reuse it on any configured Mac with a compatible desktop protocol; no CLI
+  resume process, new network listener or model credentials are introduced.
+- Check native busy/approval state, retain the chat's existing settings, and
+  quarantine uncertain prompt admission in a private per-binding journal.
+- Add per-chat LaunchAgent installation, read-only compatibility checks,
+  disable support and native-adapter regression tests.
+
 ## v0.2.0-rc.5
 
 - Serialize file work by message ID instead of one global file lock, so a slow

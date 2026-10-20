@@ -77,6 +77,94 @@ listener. Pending notifications and shared history are retained. Disable the
 binding before deliberately ending automated cooperation; stopping an individual
 model turn does not itself uninstall a configured inbox listener.
 
+## Codex desktop (macOS)
+
+`adapters/codex-desktop.mjs` is a reusable local sidecar for an **existing**
+Codex desktop chat. Each Mac and each chat has its own configuration, worker,
+native thread UUID and private state path. `office-codex` and `home-codex` use
+the same adapter; names alone do not register a chat or grant permission.
+CLI and MCP messaging remain available without changing their permissions.
+
+The sidecar connects to the current user's private `CODEX_HOME/ipc/ipc.sock`
+(normally `~/.codex/ipc/ipc.sock`). It initializes as `agent-link-wake`, discovers
+the selected chat's native owner, reads that owner's selected-chat snapshot,
+and submits a fixed retrieval nudge through the owning window. It never serves
+owner discovery, takes ownership, starts another app-server, runs `codex exec
+resume`, inspects other chats, or changes a chat's model, workspace or approval
+settings. A snapshot transcript is parsed transiently and discarded; only
+minimal native identity/readiness fields are retained. No API key or public IP
+is needed. This is a same-user desktop integration, not an access boundary.
+
+**Compatibility:** this optional coordination protocol is an internal desktop
+interface, separate from the documented app-server JSON-RPC protocol. The
+initial read-only check passed on the desktop bundled with codex-cli
+`0.163.0-alpha.10.2`: snapshot v11, owner/following v1, start v2. Other versions
+must pass `check`; unknown versions, missing owners, approvals, unloaded chats
+or unavailable applications defer notifications. Do not guess protocol versions
+or change application files to force compatibility. The documented app-server
+API alone does not imply access to an existing desktop-owned chat.
+
+After pulling a committed source revision and running the normal installer,
+create a **0600** JSON file in this user's private application data directory:
+
+```json
+{
+  "enabled": true,
+  "cliPath": "/Users/YOU/.local/bin/agent-link",
+  "session": "office-codex-RETAINED_UNIQUE_WORKER",
+  "nativeSessionId": "ACTUAL-CODEX-THREAD-UUID",
+  "from": ["CONFIRMED_PEER_DEVICE_ID"],
+  "conversations": ["authorized-cooperation"],
+  "kinds": ["task", "result"],
+  "statePath": "/Users/YOU/Library/Application Support/codex-link/wake/office-codex-native.json"
+}
+```
+
+Obtain the native UUID from `CODEX_THREAD_ID` in the selected desktop chat,
+confirm it against that actual chat, and retain the unique agent-link session.
+Use an existing Node 22+ runtime (including the desktop's bundled Node), an
+absolute adapter path and an absolute private config path:
+
+```sh
+"/absolute/path/to/node" "$HOME/.local/share/agent-link/adapters/codex-desktop.mjs" check --config "/absolute/private/codex-wake.json"
+"/absolute/path/to/node" "$HOME/.local/share/agent-link/adapters/codex-desktop.mjs" install --config "/absolute/private/codex-wake.json"
+agent-link wake status --state "/absolute/private/state-from-config.json"
+```
+
+`install` requires a successful native check and `enabled: true`, creates one
+LaunchAgent labelled by a hash of this worker/chat binding, and starts only that
+sidecar. It also starts at login. There is no crash-restart loop: a failed wake
+listener requires diagnosis. For foreground use replace `install` with `run`.
+To disable the installed binding and stop its own listener:
+
+```sh
+"/absolute/path/to/node" "$HOME/.local/share/agent-link/adapters/codex-desktop.mjs" stop --config "/absolute/private/codex-wake.json"
+```
+
+State, history and queued notices are retained. Run `install` to explicitly
+enable/start it again. Changed worker/chat/filter bindings need separate state
+files. Git upgrades should reinstall the shipped adapters, check compatibility,
+and restart only that binding. No full desktop restart is necessary.
+
+The shared wake queue waits while the native chat is active. Submission obtains
+a fresh native snapshot too; a busy transition detected there defers the event.
+Codex owns final user-message admission; a simultaneous human prompt after that
+last check can be admitted as steering by Codex rather than a separate turn.
+There is no atomic idle-only operation in this desktop interface, so this adapter
+does not promise a race-free next-turn boundary. It never interrupts a turn or
+answers an approval. Existing drafts and the native follow-up queue are not
+edited. The native message ID is deterministic for each wake event.
+
+A private `.codex-submissions.json` beside the wake state records intent before
+native submission and acceptance after confirmation. If submission times out,
+disconnects, or fails after intent is recorded, the binding defers subsequent
+notifications instead of blindly retrying or switching to UI. `check` reports
+`uncertain_admission: true`; inspect the exact chat and native message ID before
+manually resolving that journal. Do not delete an intent just to make a test
+green. Admission, native listener readiness and real model completion must be
+verified separately. Two-way automatic wake requires a working binding on both
+receiving chats, followed by a fresh task/result without human input on either.
+
 ## Desktop fallback
 
 The adapter offers an explicitly enabled macOS fallback only when the native
@@ -116,5 +204,5 @@ external effects are not promised. The native host stores a bounded private
 acceptance cache too. No automatic task ownership or permission changes occur.
 
 Other harnesses can use `adapters/native-host.mjs` with their local `inspect`
-and `submit` functions. Do not bind Codex's desktop chat to a separate CLI
-resume process without verifying native identity, ownership and busy state.
+and `submit` functions. Codex desktop uses the selected-chat sidecar above;
+do not replace it with a separate CLI resume process.

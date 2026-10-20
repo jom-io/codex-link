@@ -4,6 +4,35 @@ Use only when the user requests automatic receipt handling. The normal CLI/MCP
 flow continues to work without a wake listener. Native host APIs come first;
 UI fallback is explicitly configured and never handles approvals.
 
+## Codex desktop
+
+Use the shipped `adapters/codex-desktop.mjs` sidecar on each Mac. Retain this
+chat's unique worker and actual `CODEX_THREAD_ID`; do not reuse another window's
+session. Create a private 0600 binding JSON with `enabled`, absolute `cliPath`,
+`session`, `nativeSessionId`, explicit sender device `from`, optional
+`conversations`, and an absolute unique `statePath`. No credentials are needed.
+Use an existing Node 22+ runtime:
+
+```sh
+NODE /absolute/installed/adapters/codex-desktop.mjs check --config /absolute/private/binding.json
+NODE /absolute/installed/adapters/codex-desktop.mjs install --config /absolute/private/binding.json
+NODE /absolute/installed/adapters/codex-desktop.mjs stop --config /absolute/private/binding.json
+```
+
+`check` is read-only and verifies the real local desktop owner/snapshot.
+`install` starts a per-binding LaunchAgent; `stop` disables/stops only that
+binding. It never opens a second CLI resume process. Unknown native versions,
+busy/approval/unknown states defer; an ambiguous submission is quarantined in
+the private `.codex-submissions.json` journal and requires inspection before
+retry. Native user admission has an idle-check race with a simultaneous human
+prompt; do not claim strict next-turn isolation or exactly-once execution.
+Git pull + normal source installation ships the same adapter to office/home;
+each receiving chat needs its own local binding. A network outage still
+prevents the model from replying even when native wake admission succeeds.
+See the full configuration and compatibility limits in `docs/wake.md` below.
+
+## DeepSeek Harness desktop
+
 1. Install the pinned Git version and preserve device identity/history/config.
    The source installer ships adapters in `~/.local/share/agent-link/adapters`.
 2. On DeepSeek Harness desktop, get this selected chat's native ID from its
