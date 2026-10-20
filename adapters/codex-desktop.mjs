@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { startNativeBridge, validateBinding } from './native-host.mjs';
+import { replaceLaunchAgent } from './launchd.mjs';
 import { withCodexChat } from './codex-ipc.mjs';
 
 export function codexState(state) {
@@ -155,9 +156,7 @@ export async function main(args) {
     await privateFile(service.path, true); await privateFile(service.log, true);
     await writeFile(service.path, service.plist, { mode: 0o600 });
     const log = await open(service.log, 'a', 0o600); await log.close();
-    launchctl(['bootout', target + '/' + service.label], false);
-    launchctl(['enable', target + '/' + service.label]);
-    launchctl(['bootstrap', target, service.path]);
+    await replaceLaunchAgent(target + '/' + service.label, service.path, launchctl);
     console.log(JSON.stringify({ installed: true, label: service.label, state_path: config.statePath, ...result })); return;
   }
   if (config.enabled !== true) throw new Error('Codex wake is disabled');

@@ -56,7 +56,7 @@ export function startSessionManager(config, createHost, startBridge, logger = ()
   return { ready, tick, bridges, dispose() { disposed = true; clearInterval(timer); for (const b of bridges.values()) b.dispose(); bridges.clear(); } };
 }
 
-export async function attachCodex(ep, { cliPath = join(homedir(), '.local', 'bin', 'agent-link'), home = process.env.AGENT_LINK_HOME ?? process.env.CODEX_LINK_HOME ?? join(homedir(), 'Library', 'Application Support', 'codex-link'), run = execFile } = {}) {
+export async function attachCodex(ep, { cliPath = process.env.AGENT_LINK_CLI_PATH ?? join(homedir(), '.local', 'bin', 'agent-link'), home = process.env.AGENT_LINK_HOME ?? process.env.CODEX_LINK_HOME ?? join(homedir(), 'Library', 'Application Support', 'codex-link'), run = execFile } = {}) {
   if (!ep.local || ep.harness !== 'codex' || !ep.wake || !ep.native_session || !ep.session) throw new Error('Not an enabled local Codex endpoint');
   const { createCodexHost, codexService } = await import('./codex-desktop.mjs');
   // Reuse an imported queue and the old filters/journal; only add registry rules.
@@ -69,7 +69,7 @@ export async function attachCodex(ep, { cliPath = join(homedir(), '.local', 'bin
       if (old.session === ep.session && old.nativeSessionId === ep.native_session && old.cliPath) { config = { ...old }; break; }
     } catch { /* state files aren't adapter configs */ }
   }
-  config.registry = true; config.enabled = true;
+  config.registry = true; config.enabled = true; config.cliPath = cliPath;
   const host = await createCodexHost(config); const check = await host.check(AbortSignal.timeout(10000));
   if (check.uncertain_admission) throw new Error('Native admission needs review before registration');
   const path = join(home, 'wake', 'endpoint-' + ep.id + '.binding.json');
@@ -79,7 +79,7 @@ export async function attachCodex(ep, { cliPath = join(homedir(), '.local', 'bin
   // LaunchAgent is repaired without creating a second identity.
   const service = codexService(config, path);
   let alive = false;
-  if (existing === body) { try { await run('/bin/launchctl', ['print', 'gui/' + process.getuid() + '/' + service.label], { timeout: 5000 }); alive = true; } catch {} }
+  if (existing === body) { try { const result = await run('/bin/launchctl', ['print', 'gui/' + process.getuid() + '/' + service.label], { timeout: 5000 }); alive = /^\s*pid = [1-9][0-9]*\s*$/m.test(result.stdout); } catch {} }
   if (!alive) {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 }); await writeFile(path, body, { mode: 0o600 }); await chmod(path, 0o600);
     await run(process.execPath, [new URL('./codex-desktop.mjs', import.meta.url).pathname, 'install', '--config', path], { timeout: 20000 });

@@ -239,6 +239,13 @@ func (s *mcpServer) toolCall(ctx context.Context, name string, args json.RawMess
 			if e = enableCodexReceiver(ctx, raw); e != nil {
 				return nil, e
 			}
+			raw, e = s.call(ctx, s.home, "session/current", link.APIRequest{Session: ep.Session})
+			if e != nil {
+				return nil, e
+			}
+			if e = json.Unmarshal(raw, &ep); e != nil {
+				return nil, e
+			}
 		}
 		return ep, nil
 	}

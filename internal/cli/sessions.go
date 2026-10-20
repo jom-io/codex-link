@@ -151,6 +151,10 @@ func serveSessions(home string, args []string) error {
 		if e = enableCodexReceiver(ctx, raw); e != nil {
 			return e
 		}
+		raw, e = link.Call(ctx, home, "session/current", a)
+		if e != nil {
+			return e
+		}
 	}
 	var out any
 	if e = json.Unmarshal(raw, &out); e != nil {
@@ -170,6 +174,7 @@ func enableCodexReceiver(ctx context.Context, raw json.RawMessage) error {
 		return errors.New("chat registered; Node runtime required to enable the native receiver")
 	}
 	cmd := exec.CommandContext(ctx, node, adapter, "attach-codex")
+	cmd.Env = append(os.Environ(), "AGENT_LINK_CLI_PATH="+exe)
 	cmd.Stdin = strings.NewReader(string(raw))
 	out, e := cmd.CombinedOutput()
 	if e != nil {

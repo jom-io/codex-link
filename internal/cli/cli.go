@@ -474,15 +474,21 @@ func launch(home, action string) error {
 			return e
 		}
 		if action == "start" {
-			if exec.Command("/bin/launchctl", "print", target).Run() == nil {
-				if e = command("kickstart", "-k", target); e != nil {
-					return e
-				}
-			} else {
-				if e = command("bootstrap", domain, path); e != nil {
-					return e
-				}
+			loaded := func() bool { return exec.Command("/bin/launchctl", "print", target).Run() == nil }
+			if e = startLaunchAgent(loaded, command, domain, target, path, time.Sleep); e != nil {
+				return e
 			}
+			// bootstrap only confirms service registration, not socket readiness.
+			for attempt := 0; attempt < 20; attempt++ {
+				ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+				_, err := link.Call(ctx, home, "status", link.APIRequest{})
+				cancel()
+				if err == nil {
+					return printJSON(map[string]string{"launch_agent": path, "action": action})
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			return errors.New("daemon registered but socket not ready; inspect its private log and retry daemon start; data preserved")
 		}
 		return printJSON(map[string]string{"launch_agent": path, "action": action})
 	case "stop", "uninstall":
@@ -500,4 +506,20 @@ func launch(home, action string) error {
 	default:
 		return errors.New("unknown daemon action")
 	}
+}
+
+func startLaunchAgent(loaded func() bool, command func(...string) error, domain, target, path string, pause func(time.Duration)) error {
+	var last error
+	for attempt := 0; attempt < 12; attempt++ {
+		if loaded() {
+			last = command("kickstart", "-k", target)
+		} else {
+			last = command("bootstrap", domain, path)
+		}
+		if last == nil {
+			return nil
+		}
+		pause(250 * time.Millisecond)
+	}
+	return last
 }

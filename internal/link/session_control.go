@@ -1,7 +1,6 @@
 package link
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -362,7 +361,3 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 	}
 	return nil, fmt.Errorf("unknown session operation %s", path)
 }
-
-// Keep control traffic out of model inboxes by default, while history/get still
-// retain the original signed messages for inspection and backwards compatibility.
-func registryMetadata(text string) bool { return bytes.HasPrefix([]byte(text), []byte(controlPrefix)) }
