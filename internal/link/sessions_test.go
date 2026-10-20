@@ -179,6 +179,10 @@ func TestSessionBindingHandshakeFanoutScopeAndRealProbe(t *testing.T) {
 	if _, e = b.verifyProbe(ctx, APIRequest{ID: probe.ID, Session: home1.Session}); e != nil {
 		t.Fatal(e)
 	}
+	activity, e := b.Store.Activities(ctx, probe.ID)
+	if e != nil || len(activity) != 1 || activity[0].Health != "completed" {
+		t.Fatal("probe completion left stale worker activity", activity, e)
+	}
 	transferTest(t, b, a)
 	bs, _ = a.Store.Bindings(ctx, office.Session)
 	verified := 0

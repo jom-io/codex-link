@@ -89,6 +89,10 @@ func (d *Daemon) verifyProbe(ctx context.Context, a APIRequest) (any, error) {
 	if e = d.Store.Complete(ctx, a.ID, ep.Session, text, result); e != nil {
 		return nil, e
 	}
+	r.LeaseUntil = 0
+	if e = d.reportActivity(ctx, r, ep.Session, "completed", ""); e != nil {
+		return nil, e
+	}
 	d.notify()
 	return map[string]string{"status": "completed", "reply_id": result.ID}, nil
 }
