@@ -4,15 +4,16 @@ Repository: https://github.com/jom-io/codex-link
 
 ## Published release
 
-Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it downloads the matching Mac release, verifies the published SHA-256, and installs the CLI to `~/.local/bin` and skill to `${CODEX_HOME:-~/.codex}/skills/agent-link`. After a v0.2 release is published, set `AGENT_LINK_VERSION=v0.2.0` to pin a release. Set `AGENT_LINK_INSTALL_REF=v0.2.0` when using this skill's installer wrapper. Checksums detect download corruption; they are not a separate publisher signature. macOS binaries are currently unsigned and not notarized.
+Download `scripts/install.sh` from a reviewed tag or commit. Run it locally; it downloads the matching Mac release, verifies the published SHA-256, and installs the CLI to `~/.local/bin` and skill to `${CODEX_HOME:-~/.codex}/skills/agent-link`. Set `AGENT_LINK_VERSION=v0.2.0` to pin this stable release. Set `AGENT_LINK_INSTALL_REF=v0.2.0` when using this skill's installer wrapper. Checksums detect download corruption; they are not a separate publisher signature. macOS binaries are currently unsigned and not notarized.
 
 ## Source fallback
 
 ```sh
 git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
-git switch codex/agent-link-multi-harness
-AGENT_LINK_VERSION=v0.2.0-rc.2 sh scripts/install.sh --source "$PWD"
+git fetch origin tag v0.2.0
+git switch --detach v0.2.0
+AGENT_LINK_VERSION=v0.2.0 sh scripts/install.sh --source "$PWD"
 ```
 
 Requires Go 1.25+. A source ZIP requires extraction and the same build step. Do not assume an untagged branch is a stable release.

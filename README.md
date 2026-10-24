@@ -11,7 +11,7 @@ until a local binding is enabled. CLI, MCP and automatic routing are unchanged.
 
 Encrypted messaging, file transfer and task coordination between agent harnesses on your Macs. Codex, Claude Code and DeepSeek Harness use the same per-user Go daemon through a JSON CLI or MCP stdio. Model credentials stay with the harness.
 
-**v0.2 development:** renamed from codex-link. `codex-link` remains a compatible command. Both names share the existing identity, pairing, SQLite history/cache and daemon; no reinitialization is needed. This repository and Go module retain their original `jom-io/codex-link` location during migration. No published v0.2 release is implied by a development checkout.
+**v0.2.0:** renamed from codex-link. `codex-link` remains a compatible command. Both names share the existing identity, pairing, SQLite history/cache and daemon; no reinitialization is needed. This repository and Go module retain their original `jom-io/codex-link` location. Use the reviewed `v0.2.0` tag for this stable release.
 
 ## What it provides
 
@@ -45,19 +45,20 @@ Requires Go 1.25+. Use an existing checkout or clone the repository; choose the 
 ```sh
 git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
-git switch codex/agent-link-multi-harness
+git fetch origin tag v0.2.0
+git switch --detach v0.2.0
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.8 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
 ```
 
-For subsequent upgrades use `git fetch origin` and `git merge --ff-only origin/codex/agent-link-multi-harness` in a clean checkout. Do not discard local changes. The installer uses `~/.codex/bin/codex-go` when present, or Go otherwise; `AGENT_LINK_GO` can select the executable. Builds use a shared Go cache and stable output paths. Existing managed link daemons are stopped only for replacement, then restarted. Other services are untouched. Validate device ID, paired peer and history after upgrading. Do **not** run `init` again on an existing installation.
+For subsequent stable upgrades, fetch the reviewed release tag and switch to it in a clean checkout; verify the same full commit on both Macs and set the matching `AGENT_LINK_VERSION`. Do not discard local changes. The installer uses `~/.codex/bin/codex-go` when present, or Go otherwise; `AGENT_LINK_GO` can select the executable. Builds use a shared Go cache and stable output paths. Existing managed link daemons are stopped only for replacement, then restarted. Other services are untouched. Validate device ID, paired peer and history after upgrading. Do **not** run `init` again on an existing installation.
 
 Each installer keeps rollback binaries/skills in `$BIN_DIR/.agent-link-backups/<old-binary-sha256>/`. Before reverting to a version without routing, let pending file sends finish: older daemons cannot upload the new staged-file outbox. Stop the link daemon, restore the saved binaries and matching skills from that snapshot, and start it. History, cached files and Keychain entries are never removed by upgrade. On an installation/restart failure, inspect the reported error and use the retained snapshot; there is no automatic rollback after a partial install.
 
-Release packages include both command names and both skills. When a v0.2 release exists, use its inspected `scripts/install.sh`; `AGENT_LINK_VERSION` pins the version. Existing `CODEX_LINK_VERSION`, `CODEX_LINK_BIN_DIR` and `CODEX_LINK_SKILL_DIR` installer settings are accepted. A verified extracted package can also be installed with `sh scripts/install.sh --package /absolute/package`.
+Release packages include both command names and both skills. Use the release's inspected `scripts/install.sh` with `AGENT_LINK_VERSION=v0.2.0` to pin this version. Existing `CODEX_LINK_VERSION`, `CODEX_LINK_BIN_DIR` and `CODEX_LINK_SKILL_DIR` installer settings are accepted. A verified extracted package can also be installed with `sh scripts/install.sh --package /absolute/package`.
 
 ## New installation
 
@@ -148,7 +149,7 @@ Claim the task's own `message.id`, never `reply_to`. Immediately acknowledge a c
 go test ./...
 go test -race ./...
 go vet ./...
-sh scripts/package.sh v0.2.0-rc.3
+sh scripts/package.sh v0.2.0
 ```
 
 On a machine with a Go policy wrapper, run Go commands through that wrapper (for example `~/.codex/bin/codex-go test ./...`). Package/source scripts detect it automatically and accept `AGENT_LINK_GO`. Package artifacts use stable `dist/` filenames for arm64/amd64, including legacy filenames. No model API client or additional Go dependency is introduced by MCP.

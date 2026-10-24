@@ -8,7 +8,7 @@ DeepSeek Harness 优先使用进程内原生会话接口，桌面模拟仅作为
 
 面向 Codex、Claude Code、DeepSeek Harness 等 AI 编程工具的跨 Mac 加密消息、文件和任务协作组件。各 harness 通过 JSON CLI 或 MCP stdio 使用同一个本地 Go daemon，不接管模型或模型 API 密钥。
 
-当前为 **v0.2 开发版本**：从 codex-link 更名而来，旧命令仍兼容。仓库与 Go module 暂保留 `jom-io/codex-link` 地址；不把开发分支视作已发布的稳定 Release。
+**v0.2.0 正式版**从 codex-link 更名而来，旧命令仍兼容。仓库与 Go module 保留 `jom-io/codex-link` 地址；正式安装固定到经过核对的 `v0.2.0` 标签。
 
 ## 已有设备从 Git 升级
 
@@ -17,15 +17,16 @@ DeepSeek Harness 优先使用进程内原生会话接口，桌面模拟仅作为
 ```sh
 git clone https://github.com/jom-io/codex-link.git agent-link
 cd agent-link
-git switch codex/agent-link-multi-harness
+git fetch origin tag v0.2.0
+git switch --detach v0.2.0
 git rev-parse HEAD
-AGENT_LINK_VERSION=v0.2.0-rc.3 sh scripts/install.sh --source "$PWD"
+AGENT_LINK_VERSION=v0.2.0 sh scripts/install.sh --source "$PWD"
 "$HOME/.local/bin/agent-link" version
 "$HOME/.local/bin/codex-link" status
 "$HOME/.local/bin/agent-link" peers
 ```
 
-后续在干净工作区 `git fetch origin`，再 `git merge --ff-only origin/codex/agent-link-multi-harness`。不要丢弃本地改动。安装器检测到 `~/.codex/bin/codex-go` 时优先使用它，也支持 `AGENT_LINK_GO` 指定 Go 包装工具；统一复用编译缓存，产物写入固定路径。
+后续正式升级时，在干净工作区拉取经过核对的 Release 标签并切换到该标签，两台机器核对同一完整提交，并设置匹配的 `AGENT_LINK_VERSION`。不要丢弃本地改动。安装器检测到 `~/.codex/bin/codex-go` 时优先使用它，也支持 `AGENT_LINK_GO` 指定 Go 包装工具；统一复用编译缓存，产物写入固定路径。
 
 升级只短暂停止和重启现有 link daemon。`agent-link` 和兼容命令 `codex-link` 共用设备身份、配对、数据库、文件缓存、Unix socket 和服务。**已有设备不要重新 init，不要改名 Keychain 条目或复制私钥。** 安装后核对设备 ID、配对和历史是否保留。
 
@@ -88,4 +89,4 @@ DeepSeek 桌面可在多个聊天间共用一个 MCP 进程，每个聊天先调
 
 保留原有能力边界：不保证外部任务副作用 exactly-once，不新增自动执行器、跨用户收件箱、自动 STS 刷新、归档自动解压或其他存储提供方。设备离线恢复受 Redis/OSS 保留策略限制；worker 超时只表示疑似无响应，不能据此重复执行任务。macOS 登录会话和 Keychain 需可用。
 
-开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0-rc.3`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。
+开发验证运行 `go test ./...`、`go test -race ./...`、`go vet ./...`；本机有 Go 规则包装工具时均通过该工具调用。打包命令 `sh scripts/package.sh v0.2.0`。参见 [架构](docs/architecture.md)、[变更记录](CHANGELOG.md) 和 [验证说明](docs/verification.md)。

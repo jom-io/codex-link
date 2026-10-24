@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.2.0 - 2026-10-24
+
+- Automatic shared-daemon local delivery, authenticated private IPv4 direct
+  delivery and existing Redis/OSS fallback for both CLI and MCP. Signed endpoint
+  discovery reuses Redis and local cache; no new discovery dependency.
+- Immutable encrypted file staging, verified receiver cache before LAN ACK,
+  lost-ACK fallback deduplication, durable upload retries and route diagnostics.
+
+- Rename the product/CLI to agent-link, with a shared codex-link compatibility entry and generic harness Skill.
+- Preserve protocol v2, identity, Keychain, LaunchAgent, database, history/cache and OSS/crypto namespaces for in-place mixed-version upgrades.
+- Add neutral AGENT_LINK_* environment settings with legacy fallback and a documented Git/source upgrade and retained rollback snapshots.
+- Add bounded MCP stdio tools: read-only by default, explicit messaging/task and file opt-ins, fixed per-process session ownership; no command executor. Native wake remains separately opt-in.
+- Allocate independent named worker sessions for separate chats sharing one MCP process, while retaining explicit owner resumption.
+- Document Codex, Claude Code and DeepSeek Harness integration and extend compatibility/MCP tests.
+- Add persistent exact-chat registration, readable automatic aliases, explicitly accepted channel bindings and recovery of the same worker/endpoint after reopen.
+- Add opt-in Codex desktop and DeepSeek Harness native inbox wake, busy/approval and uncertain-admission guards, and exact handled-message ACKs to prevent duplicate queued notifications.
+- Add passive native presence leases, protected soft archival, pinning, complete paged peer discovery and original identity/binding restoration. Unfinished work remains protected; archival releases only the archived chat's own idle listener.
+- Verify both-Mac CLI/daemon upgrades, local/LAN/cloud routing, file integrity, real Codex/DeepSeek native wake, active-session protection and a real idle archive/listener-exit/identity-restore/new-task-wake cycle. Retain the first failed stop-stage and its passing regression evidence.
+
 ## v0.2.0-rc.12
 
 - Release an archived chat's empty inbox long-poll on its existing daemon notification, so an idle listener can exit before a quick same-chat reattach. Preserve saved replies and other chats/legacy waits; no extra polling service or native model turn.
@@ -55,22 +74,6 @@
   drafts and approvals; uncertain native failures never switch to UI submission.
 - Ship adapter resources with source/release installs without enabling them or
   changing existing identity, history, credentials, MCP permissions or routing.
-
-## v0.2.0 (unreleased)
-
-- Automatic shared-daemon local delivery, authenticated private IPv4 direct
-  delivery and existing Redis/OSS fallback for both CLI and MCP. Signed endpoint
-  discovery reuses Redis and local cache; no new discovery dependency.
-- Immutable encrypted file staging, verified receiver cache before LAN ACK,
-  lost-ACK fallback deduplication, durable upload retries and route diagnostics.
-
-- Rename the product/CLI to agent-link, with a shared codex-link compatibility entry and generic harness Skill.
-- Preserve protocol v2, identity, Keychain, LaunchAgent, database, history/cache and OSS/crypto namespaces for in-place mixed-version upgrades.
-- Add neutral AGENT_LINK_* environment settings with legacy fallback and a documented Git/source upgrade and retained rollback snapshots.
-- Add bounded MCP stdio tools: read-only by default, explicit messaging/task and file opt-ins, fixed per-process session ownership; no command executor or automatic wakeup.
-- Allocate independent named worker sessions for separate chats sharing one MCP process, while retaining explicit owner resumption.
-- Document Codex, Claude Code and DeepSeek Harness integration and extend compatibility/MCP tests.
-
 
 ## v0.1.3 — 2026-10-03
 
