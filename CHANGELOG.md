@@ -3,7 +3,7 @@
 ## v0.2.0-rc.11
 
 - Add passive native presence leases, scoped lifecycle previews, protected soft archival, pinning and restoration of the original chat identity/bindings.
-- Keep task/message/file/native-admission guards transactional; expired leases do not imply unfinished work is complete. Preserve history, pause/wake scope and file permissions.
+- Check task/message/file guards in the archive transaction and preserve native-admission safeguards; expired leases do not imply unfinished work is complete. Preserve history, pause/wake scope and file permissions.
 - Filter discovery views and use complete authenticated paged snapshots with local cache freshness; retain legacy directory interoperability without the 64-chat truncation/host cap.
 - Stop only archived endpoints’ own listeners, retaining queues/journals. Unsupported native presence remains unknown; no model pulse or resolver-based historical chat loading.
 
