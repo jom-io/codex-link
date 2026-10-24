@@ -228,3 +228,14 @@ restart; scans and pending-queue rechecks exclude it. Other chats, history,
 cursors and leases are unchanged, and unfinished tasks cannot be acknowledged.
 There is no remote acknowledgement message or reply loop. Already admitted
 native prompts cannot be withdrawn; a short check-to-admission race remains.
+
+
+rc.11 presence uses the injected `agents` service's synchronous `get` for the
+exact loaded DeepSeek chat (verified in desktop 0.2.1-rc.2). It does not use
+`SessionController.resolveAgent`, which can resume persisted history, nor
+`inspect`, which may read persisted events. Cordis dependencies are explicitly
+`sessionController` and `agents`; a supported loaded plugin requires those
+services. Unknown passive interfaces remain unknown, rather than manufacturing
+presence. Install shipped resources first; an already loaded old plugin retains
+its current module until the agent-link entry is reloaded. Do not restart the
+whole host or another chat to force that reload during active work.

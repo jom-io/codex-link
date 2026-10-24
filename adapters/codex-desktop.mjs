@@ -70,6 +70,10 @@ export async function createCodexHost(config, { chat = withCodexChat } = {}) {
   const selected = (signal, operation) => chat(socket, config.nativeSessionId, signal, operation);
   return {
     journal,
+    async presence(signal) {
+      try { return await selected(signal, (_client, { state }) => ({ state: journal.uncertain() ? 'uncertain' : codexState(state) })); }
+      catch (error) { return { state: error.code === 'NATIVE_CHAT_MISSING' ? 'missing' : 'unknown' }; }
+    },
     async inspect(id, signal) {
       if (id !== config.nativeSessionId) throw new Error('Wrong Codex native chat');
       if (journal.uncertain()) return 'waiting_user';

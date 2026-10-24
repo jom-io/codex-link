@@ -155,3 +155,17 @@ test('Codex service is per binding, quotes paths, has no crash restart loop or s
   assert.notEqual(a.label, b.label); assert.match(a.plist, /binding &amp; chat.json/);
   assert.match(a.plist, /<key>KeepAlive<\/key><false\/>/); assert.doesNotMatch(a.plist, /\/bin\/sh|osascript|resume/);
 });
+
+test('passive Codex presence distinguishes real native activity from uncertain transport and never submits', async t => {
+  const f = await fixture(t), host = await createCodexHost(f.c);
+  assert.deepEqual(await host.presence(), { state: 'idle' });
+  f.state.threadRuntimeStatus = { type: 'active' };
+  assert.deepEqual(await host.presence(), { state: 'running' });
+  f.state.requests = [{ id: 'approval' }];
+  assert.deepEqual(await host.presence(), { state: 'waiting_user' });
+  assert.equal(f.calls.filter(c => c.method === 'thread-follower-start-turn').length, 0);
+  const unknown = await createCodexHost(f.c, { chat: async () => { throw new Error('network or protocol unavailable'); } });
+  assert.deepEqual(await unknown.presence(), { state: 'unknown' });
+  const missing = await createCodexHost(f.c, { chat: async () => { const e = new Error('confirmed absent'); e.code = 'NATIVE_CHAT_MISSING'; throw e; } });
+  assert.deepEqual(await missing.presence(), { state: 'missing' });
+});

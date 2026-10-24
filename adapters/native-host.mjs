@@ -99,7 +99,20 @@ export function startNativeBridge(config, host, logger = () => {}) {
   let ready = false;
   child.on('error', () => logger('Wake listener could not start'));
   child.stderr.on('data', () => logger('Wake listener reported an error; inspect its private state'));
-  child.on('exit', () => { cancellation.abort(); dispatcher.dispose(); logger('Wake listener stopped'); });
+  let presenceRunning = false;
+  const renewPresence = async () => {
+    if (presenceRunning || cancellation.signal.aborted || config.registry !== true || typeof host.presence !== 'function') return;
+    presenceRunning = true;
+    try {
+      const observation = await host.presence(AbortSignal.timeout(8000));
+      const { stdout } = await execFile(config.cliPath, ['session', 'presence', '--session', config.session, '--native-session', config.nativeSessionId, '--state', observation.state], { timeout: 10000, maxBuffer: 32768 });
+      const ep = JSON.parse(stdout);
+      if (ep.status === 'archived') { dispatcher.dispose(); cancellation.abort(); child.stdin.end(); child.kill('SIGTERM'); }
+    } catch { logger('Native presence unconfirmed; no lease renewed'); }
+    finally { presenceRunning = false; }
+  };
+  const presenceTimer = setInterval(renewPresence, 60000);
+  child.on('exit', () => { clearInterval(presenceTimer); cancellation.abort(); dispatcher.dispose(); logger('Wake listener stopped'); });
   const run = (async () => {
     try {
       for await (const line of lines) {
@@ -108,7 +121,7 @@ export function startNativeBridge(config, host, logger = () => {}) {
         if (event.type === 'ready') {
           if (event.session !== config.session || event.native_session !== config.nativeSessionId || !isAbsolute(event.state_path ?? '')) throw new Error('Wrong listener binding');
           await dispatcher.loadCache(event.state_path + '.accepted.json');
-          ready = true; logger('Wake listener ready for the bound chat'); continue;
+          ready = true; await renewPresence(); logger('Wake listener ready for the bound chat'); continue;
         }
         if (!ready) throw new Error('Wake listener was not initialized');
         const signal = AbortSignal.any([cancellation.signal, AbortSignal.timeout(10000)]);
@@ -125,7 +138,7 @@ export function startNativeBridge(config, host, logger = () => {}) {
   return {
     enabled: true, pid: child.pid, done: run,
     dispose() {
-      dispatcher.dispose(); cancellation.abort(); lines.close();
+      clearInterval(presenceTimer); dispatcher.dispose(); cancellation.abort(); lines.close();
       child.stdin.end(); child.kill('SIGTERM');
     },
   };

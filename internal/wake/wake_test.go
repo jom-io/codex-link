@@ -319,3 +319,32 @@ func TestRegistryPauseRetainsQueueAndRevalidatesExactScope(t *testing.T) {
 		t.Fatal("history changed")
 	}
 }
+
+func TestArchivedRegistryStopsOnlyWatcherAndPreservesPendingHistory(t *testing.T) {
+	ctx := context.Background()
+	c := config(t)
+	c.Registry = true
+	f := &inboxFixture{rows: []link.Record{record(1, "task")}}
+	archived := false
+	call := func(ctx context.Context, op string, a link.APIRequest) (json.RawMessage, error) {
+		if op == "wake/eligible" {
+			return json.Marshal(map[string]any{"archived": archived, "wake": true, "allowed": true, "paused": false})
+		}
+		return f.call(ctx, op, a)
+	}
+	w, e := Open(ctx, c, call)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer w.Close()
+	if _, e = w.Step(ctx, func(_ context.Context, event Event) (Ack, error) { return Ack{ID: event.ID, Status: "busy"}, nil }, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	archived = true
+	if e = w.Run(ctx, func(context.Context, Event) (Ack, error) { t.Fatal("archived chat woke"); return Ack{}, nil }); e != nil {
+		t.Fatal(e)
+	}
+	if w.state.Status != "archived" || len(w.state.Pending) != 1 || len(f.rows) != 1 || w.state.Accepted != 0 {
+		t.Fatal("archive discarded history or did not stop", w.state)
+	}
+}

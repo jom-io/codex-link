@@ -41,3 +41,12 @@ test('DeepSeek adapter refuses wrong native identity and unconfirmed admission',
   await assert.rejects(() => host.submit('native-session', 'nudge', undefined, 'id'));
   assert.throws(() => createDeepSeekHost(null, cfg), { code: 'UNSUPPORTED_NATIVE_API' });
 });
+
+test('DeepSeek passive presence never resolves or rehydrates historical sessions', async () => {
+ const agents = new Map([['native-session', { id: 'native-session', status: 'idle' }]]);
+ const controller = { ctx: { agents: { get: id => agents.get(id) } }, resolveAgent: async () => assert.fail('presence rehydrated history'), prompt: async () => assert.fail('presence started a turn') };
+ const host = createDeepSeekHost(controller, cfg);
+ assert.deepEqual(await host.presence(), { state: 'idle' }); agents.get('native-session').status = 'running'; assert.deepEqual(await host.presence(), { state: 'running' });
+ agents.delete('native-session'); assert.deepEqual(await host.presence(), { state: 'missing' });
+ delete controller.ctx.agents; assert.deepEqual(await createDeepSeekHost(controller, cfg).presence(), { state: 'unknown' });
+});

@@ -1,7 +1,7 @@
 # 会话在线租约与自动归档设计
 
-状态：设计稿，2026-10-24。当前 rc.10 尚未实现本文规则；本文不修改现有会话登记、
-监听器、任务或配置。后续实现以现有 CLI/MCP、daemon 与宿主适配器为基础，不新增服务。
+状态：rc.11 实现说明，2026-10-24。保留原设计的阈值和保护边界；基于现有 CLI/MCP、
+daemon 与宿主适配器实现，不新增服务。实机验收单独记录。当前缺口一节为 rc.10 的基线。
 
 ## 当前缺口
 
@@ -82,13 +82,13 @@ archive_reason 与 pinned。online/offline 可按租约推导；归档是持久�
   重新核验 native owner，再按原 wake/paused/权限设置接入。新聊天继续获得独立身份。
   远端发现、心跳和来信不自动恢复本机已归档端点，也不授予接入权限。
 
-## 操作入口（拟议，当前版本不可直接执行）
+## 操作入口（rc.11）
 
 - session list：面向用户的当前候选视图；--all / --archived 查看历史及原因，支持分页。
 - session detach：当前聊天主动退出通信登记；存在未完成工作时先拒绝并列出保护原因。
 - session attach：在该实际聊天里恢复原身份；沿用现有 pause/resume 语义。
 - session pin / unpin：用户明确保留固定协作入口，仍按实际租约报告在线与否。
-- session gc --dry-run：列出候选、触发规则、保留工作和归档后的效果；正式 gc 只软归档。
+- session gc --dry-run（默认预览，--apply 才写入）：列出候选、触发规则、保留工作和归档后的效果；正式 gc 只软归档。
 
 CLI/MCP 共用 daemon 规则；任何写操作仍受原 write/本机配置权限限制，文件权限独立。
 默认每小时在 daemon 内部扫描一次，不另建定时服务，也不唤醒模型来做回收。硬删除历史、
@@ -107,3 +107,21 @@ purge 原生聊天和自动改绑其他窗口不在本设计范围。
 过期；running/审批/租约/待处理结果与文件/uncertain intent 保护；睡眠恢复；pin；旧聊天
 重开 ID 与权限保持；新聊天隔离；64+ 目录分页无缺失；旧快照不复活归档；另一聊天监听
 不受影响。实际删除历史或关闭用户原生聊天不作为“会话清理成功”的判据。
+
+## 已实现的兼容行为
+
+- 新 CLI/MCP 默认 active 视图；`session list --all` 提供 manager 和人工审计的完整视图，
+  `--archived` 同时显示已撤回/过期缓存；`--after` 是视图偏移，`--limit` 控制分页。
+- 保持 daemon 旧版不带 view 的 list 语义，以兼容已加载的旧管理器。更新管理器显式读取
+  all 并按 archived 过滤；profile 不再因超过 64 个会话整体拒绝启动。
+- 查询仍发送兼容旧端的 v1 query，新端同时回复 legacy directory 与 directory_page。
+  legacy 帧剥离新字段，旧端可继续解析。新端完整收齐配对来源快照后才撤回发现项；
+  旧端目录只合并并标 unknown，不猜测缺项就是归档。
+- 新 Codex 原生 sidecar 每分钟独立观测精确聊天，不启动模型。DeepSeek presence 仅使用
+  已加载集合，不调用可能加载历史的 resolver；无被动接口时报告 unknown 并保护绑定。
+- 手工 detach 要求五秒内的新鲜原生观测；Codex CLI 会自动只读核验。活动回合要求退出
+  通信时会拒绝，须在实际 idle 时由已授权的本机流程操作。MCP 不暴露伪造 presence 工具。
+- `session gc --session FULL_WORKER --dry-run` 可限当前会话；省略 session 的 CLI 扫描
+  本机全部登记，MCP preview/apply 仅限其已保留的当前会话。daemon 每小时做安全扫描。
+- 老登记第一次启动仅迁移保护元数据，不更新 native 在线时间，至少给予五分钟宽限。
+  在线租约、归档、缓存失效都不会删历史、放弃任务或改变 pause/wake/文件权限。

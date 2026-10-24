@@ -14,23 +14,38 @@ import (
 )
 
 type Endpoint struct {
-	ID            string    `json:"id"`
-	Device        string    `json:"device"`
-	DeviceName    string    `json:"device_name"`
-	Session       string    `json:"session"`
-	Alias         string    `json:"alias"`
-	Harness       string    `json:"harness"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	Local         bool      `json:"local"`
-	Profile       string    `json:"profile,omitempty"`
-	NativeSession string    `json:"native_session,omitempty"`
-	Wake          bool      `json:"wake"`
-	Paused        bool      `json:"paused"`
-	Receiver      string    `json:"receiver,omitempty"`
-	ReceiverAt    time.Time `json:"receiver_at,omitempty"`
-	VerifiedAt    time.Time `json:"verified_at,omitempty"`
-	StatePath     string    `json:"state_path,omitempty"`
+	LifecycleVersion int       `json:"lifecycle_version,omitempty"`
+	LifecycleSince   time.Time `json:"lifecycle_since,omitempty"`
+	LastHostSeenAt   time.Time `json:"last_host_seen_at,omitempty"`
+	LeaseExpiresAt   time.Time `json:"lease_expires_at,omitempty"`
+	OfflineSince     time.Time `json:"offline_since,omitempty"`
+	LastUsedAt       time.Time `json:"last_used_at,omitempty"`
+	HostState        string    `json:"host_state,omitempty"`
+	PresenceStatus   string    `json:"presence_status,omitempty"`
+	ObservedAt       time.Time `json:"observed_at,omitempty"`
+	ArchivedAt       time.Time `json:"archived_at,omitempty"`
+	ArchiveReason    string    `json:"archive_reason,omitempty"`
+	Pinned           bool      `json:"pinned,omitempty"`
+	Status           string    `json:"status,omitempty"`
+	FetchedAt        time.Time `json:"fetched_at,omitempty"`
+	CacheRemoved     bool      `json:"cache_removed,omitempty"`
+	ID               string    `json:"id"`
+	Device           string    `json:"device"`
+	DeviceName       string    `json:"device_name"`
+	Session          string    `json:"session"`
+	Alias            string    `json:"alias"`
+	Harness          string    `json:"harness"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	Local            bool      `json:"local"`
+	Profile          string    `json:"profile,omitempty"`
+	NativeSession    string    `json:"native_session,omitempty"`
+	Wake             bool      `json:"wake"`
+	Paused           bool      `json:"paused"`
+	Receiver         string    `json:"receiver,omitempty"`
+	ReceiverAt       time.Time `json:"receiver_at,omitempty"`
+	VerifiedAt       time.Time `json:"verified_at,omitempty"`
+	StatePath        string    `json:"state_path,omitempty"`
 }
 
 type Binding struct {
@@ -113,6 +128,10 @@ func (s *Store) Endpoint(ctx context.Context, device, session string) (Endpoint,
 	return v, e
 }
 func publicEndpoint(v Endpoint) Endpoint {
+	v.LifecycleVersion = 0
+	v.LifecycleSince, v.LastHostSeenAt, v.LeaseExpiresAt, v.OfflineSince, v.LastUsedAt, v.ObservedAt, v.ArchivedAt, v.FetchedAt = time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}, time.Time{}
+	v.HostState, v.PresenceStatus, v.ArchiveReason, v.Status = "", "", "", ""
+	v.Pinned, v.CacheRemoved = false, false
 	v.Local = false
 	v.NativeSession = ""
 	v.Profile = ""
@@ -149,7 +168,7 @@ func (d *Daemon) attach(ctx context.Context, a APIRequest) (Endpoint, error) {
 	if e != nil {
 		return Endpoint{}, e
 	}
-	now := time.Now().UTC()
+	now := d.sessionNow()
 	for _, v := range all {
 		if v.Local && v.Harness == a.Harness && v.Profile == a.Profile && v.NativeSession == a.NativeSession {
 			if a.Session != "" && a.Session != v.Session {
@@ -159,6 +178,11 @@ func (d *Daemon) attach(ctx context.Context, a APIRequest) (Endpoint, error) {
 				v.Alias = a.Name
 			}
 			v.UpdatedAt = now
+			v.LastUsedAt = now
+			v.ArchivedAt, v.ArchiveReason = time.Time{}, ""
+			if v.LifecycleVersion == 0 {
+				v.LifecycleVersion, v.LifecycleSince = 1, now
+			}
 			if a.EnableWake {
 				v.Wake = true
 			}
@@ -193,7 +217,7 @@ func (d *Daemon) attach(ctx context.Context, a APIRequest) (Endpoint, error) {
 	if name == "" {
 		name = defaultAlias(d.Config.Name, a.Harness, id, now)
 	}
-	v := Endpoint{ID: id, Device: d.Config.DeviceID, DeviceName: d.Config.Name, Session: session, Alias: name, Harness: a.Harness, Profile: a.Profile, NativeSession: a.NativeSession, Local: true, Wake: a.EnableWake, CreatedAt: now, UpdatedAt: now, Receiver: "unverified", StatePath: a.Path}
+	v := Endpoint{LifecycleVersion: 1, LifecycleSince: now, LastUsedAt: now, ID: id, Device: d.Config.DeviceID, DeviceName: d.Config.Name, Session: session, Alias: name, Harness: a.Harness, Profile: a.Profile, NativeSession: a.NativeSession, Local: true, Wake: a.EnableWake, CreatedAt: now, UpdatedAt: now, Receiver: "unverified", StatePath: a.Path}
 	return v, d.Store.saveValue(ctx, endpointKey(v.Device, v.Session), v)
 }
 func (d *Daemon) localEndpoint(ctx context.Context, session string) (Endpoint, error) {
@@ -255,8 +279,10 @@ func (d *Daemon) resolveChannelRecipient(ctx context.Context, a APIRequest) (API
 	if a.ToSession != "" {
 		return a, errors.New("channel resolves the exact to_session; do not supply to-session")
 	}
-	if _, e := d.localEndpoint(ctx, a.Session); e != nil {
+	if ep, e := d.localEndpoint(ctx, a.Session); e != nil {
 		return a, e
+	} else if !ep.ArchivedAt.IsZero() {
+		return a, errors.New("source chat is archived; attach in that exact chat to restore")
 	}
 	id, e := d.channel(ctx, a.Session, a.Channel)
 	if e != nil {
@@ -288,6 +314,9 @@ func (d *Daemon) resolveChannelRecipient(ctx context.Context, a APIRequest) (API
 			return a, e
 		}
 	}
+	if !peer.ArchivedAt.IsZero() || peer.CacheRemoved || peer.Status == "archived" {
+		return a, errors.New("recipient chat is archived or withdrawn; restore it in the original chat")
+	}
 	a.To = peer.Device
 	a.ToSession = peer.Session
 	a.Conversation = id
@@ -316,7 +345,10 @@ func (d *Daemon) wakeEligible(ctx context.Context, a APIRequest) (any, error) {
 		return nil, errors.New("native chat mismatch")
 	}
 	if a.ID == "" {
-		return map[string]any{"paused": ep.Paused, "wake": ep.Wake}, nil
+		return map[string]any{"paused": ep.Paused, "wake": ep.Wake, "archived": !ep.ArchivedAt.IsZero()}, nil
+	}
+	if !ep.ArchivedAt.IsZero() {
+		return map[string]any{"allowed": false, "paused": ep.Paused, "wake": ep.Wake, "archived": true}, nil
 	}
 	r, e := d.Store.Get(ctx, a.ID)
 	if e != nil {

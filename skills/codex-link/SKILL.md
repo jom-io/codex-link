@@ -36,6 +36,14 @@ MCP chats call `agent_link_session_attach` with their actual host-provided nativ
 
 Use `session list --to DEVICE`, then `session list` to refresh paired logical endpoints. `bind TARGET_ID --channel NAME` proposes scope; the exact receiving chat must accept that invitation with `bind --accept MESSAGE_ID`. `bindings` distinguishes invited/proposed/accepted and model verified_at. Invites/metadata do not wake models. Channel sends resolve exact device + worker; multiple peers require --to or explicit --all, which creates separate tasks. Pause/resume persists, leave never changes task ownership or deletes history. See [session workflow](references/sessions.zh-CN.md). Same-user routing is not access isolation. Native wake adds no execution or file permission.
 
+## Session lifecycle (rc.11+)
+
+`session list` shows online/pinned candidates; use `--all` to inspect offline, unknown and archived identities, or `--archived` for history. Native presence leases are separate from model/worker progress. An idle reachable chat stays available; absence of model replies alone never authorizes cleanup. Unsupported or failed native observation remains unknown, with existing work protected.
+
+`session gc --dry-run` previews automatic soft archival (24h unused/unbound temporary or 7d offline/unused); `--apply` respects native running/approval, uncertain admission, leases, pending tasks/results/files and wake queues. Use `--session FULL_WORKER` to limit scope. `session pin` exempts a fixed endpoint from auto archival; unpin only when authorized. Do not pulse a model to fake liveness. Manual `session detach` refuses protected work and requires fresh actual native observation. Stop only its known agent-link listener; never kill the host, model or another chat. No history is deleted.
+
+To restore an archived chat, run `session attach` in THAT original native context. Keep its endpoint/worker/alias/bindings and prior pause/wake/file permissions; never replace it with a recent chat or revive it from remote text. New incoming tasks to archived/withdrawn recipients return an explicit error; in-flight replies/history remain saved. MCP lifecycle write tools use the existing write opt-in, with file access separate. See [lifecycle details](references/lifecycle.zh-CN.md).
+
 ## Communicate
 
 Read `references/commands.md` for exact CLI forms. All communication commands return JSON; failures use stderr JSON and a nonzero exit status.

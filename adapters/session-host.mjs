@@ -17,7 +17,7 @@ export async function callCLI(cliPath, args) {
 // Polling metadata doesn't claim work or invent model activity. Registry rules
 // are enforced by the daemon again before every notice, even for queued work.
 export function startSessionManager(config, createHost, startBridge, logger = () => {}, { call = callCLI, interval = 5000 } = {}) {
-  const bridges = new Map(); let disposed = false, running = false, imported = false;
+  const bridges = new Map(), observations = new Map(); let disposed = false, running = false, imported = false;
   const profile = config.profile ?? 'default';
   async function tick() {
     if (disposed || running) return; running = true;
@@ -29,10 +29,11 @@ export function startSessionManager(config, createHost, startBridge, logger = ()
         if (config.statePath) args.push('--state-path', config.statePath);
         await call(config.cliPath, args); imported = true;
       }
-      const endpoints = await call(config.cliPath, ['session', 'list']);
+      const endpoints = await call(config.cliPath, ['session', 'list', '--all']);
       if (!Array.isArray(endpoints)) throw new Error('Invalid local endpoint directory');
-      const selected = endpoints.filter(e => e.local && e.harness === 'deepseek-harness' && e.profile === profile && e.wake);
-      if (selected.length > 64) throw new Error('Too many registered chats for this host');
+      const selected = endpoints.filter(e => e.local && e.harness === 'deepseek-harness' && e.profile === profile && e.wake && !(Date.parse(e.archived_at) > 0) && e.status !== 'archived');
+      const selectedIds = new Set(selected.map(e => e.id));
+      for (const [id, bridge] of bridges) { if (!selectedIds.has(id)) { bridges.delete(id); observations.delete(id); bridge.dispose(); } }
       for (const ep of selected) {
         if (disposed) break;
         if (bridges.has(ep.id)) continue;
@@ -42,8 +43,17 @@ export function startSessionManager(config, createHost, startBridge, logger = ()
           from: legacy ? (config.from ?? []) : [], conversations: legacy ? config.conversations : undefined,
           kinds: legacy ? config.kinds : undefined, timeZone: config.timeZone };
         const host = createHost(binding);
-        try { await host.inspect(ep.native_session, AbortSignal.timeout(8000)); }
-        catch { continue; } // unknown/missing native chats never fall back to another
+        try {
+          if (typeof host.presence === 'function') {
+            let seen = observations.get(ep.id);
+            if (!seen || Date.now() - seen.at >= 60000) {
+              const observation = await host.presence(AbortSignal.timeout(8000));
+              seen = { at: Date.now(), state: observation.state }; observations.set(ep.id, seen);
+              await call(config.cliPath, ['session', 'presence', '--session', ep.session, '--native-session', ep.native_session, '--state', seen.state]);
+            }
+            if (!['idle', 'running', 'waiting_user', 'uncertain'].includes(seen.state)) continue;
+          } else { await host.inspect(ep.native_session, AbortSignal.timeout(8000)); }
+        } catch { continue; } // unknown/missing native chats never fall back to another
         await call(config.cliPath, ['session', 'receiver', '--session', ep.session, '--native-session', ep.native_session, '--state', 'connected']);
         if (disposed) break;
         const bridge = startBridge(binding, host, logger); bridges.set(ep.id, bridge);
@@ -57,7 +67,7 @@ export function startSessionManager(config, createHost, startBridge, logger = ()
 }
 
 export async function attachCodex(ep, { cliPath = process.env.AGENT_LINK_CLI_PATH ?? join(homedir(), '.local', 'bin', 'agent-link'), home = process.env.AGENT_LINK_HOME ?? process.env.CODEX_LINK_HOME ?? join(homedir(), 'Library', 'Application Support', 'codex-link'), run = execFile } = {}) {
-  if (!ep.local || ep.harness !== 'codex' || !ep.wake || !ep.native_session || !ep.session) throw new Error('Not an enabled local Codex endpoint');
+  if (!ep.local || ep.harness !== 'codex' || !ep.wake || !ep.native_session || !ep.session || Date.parse(ep.archived_at) > 0) throw new Error('Not an enabled local Codex endpoint');
   const { createCodexHost, codexService } = await import('./codex-desktop.mjs');
   // Reuse an imported queue and the old filters/journal; only add registry rules.
   const statePath = ep.state_path ?? join(home, 'wake', createHash('sha256').update(ep.session + '\0' + ep.native_session).digest('hex').slice(0, 32) + '.json');
@@ -91,8 +101,16 @@ export async function attachCodex(ep, { cliPath = process.env.AGENT_LINK_CLI_PAT
   return { endpoint: ep.id, receiver: 'connected', restarted: !alive };
 }
 
+export async function observeCodex(ep, cliPath = process.env.AGENT_LINK_CLI_PATH ?? join(homedir(), '.local', 'bin', 'agent-link')) {
+  if (!ep.local || ep.harness !== 'codex' || !ep.native_session || !ep.session) throw new Error('Not a local Codex endpoint');
+  const { createCodexHost } = await import('./codex-desktop.mjs');
+  const host = await createCodexHost({ enabled: true, registry: true, cliPath, session: ep.session, nativeSessionId: ep.native_session, statePath: ep.state_path, from: [] });
+  const observation = await host.presence(AbortSignal.timeout(10000));
+  return callCLI(cliPath, ['session', 'presence', '--session', ep.session, '--native-session', ep.native_session, '--state', observation.state]);
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  if (process.argv[2] !== 'attach-codex') throw new Error('Usage: session-host.mjs attach-codex < local-endpoint.json');
+  if (!['attach-codex', 'observe-codex'].includes(process.argv[2])) throw new Error('Usage: session-host.mjs attach-codex < local-endpoint.json');
   let data = ''; for await (const chunk of process.stdin) { data += chunk; if (data.length > 16384) throw new Error('Oversized endpoint'); }
-  attachCodex(JSON.parse(data)).then(r => console.log(JSON.stringify(r))).catch(e => { console.error(e.message); process.exitCode = 1; });
+  (process.argv[2] === 'observe-codex' ? observeCodex(JSON.parse(data)) : attachCodex(JSON.parse(data))).then(r => console.log(JSON.stringify(r))).catch(e => { console.error(e.message); process.exitCode = 1; });
 }

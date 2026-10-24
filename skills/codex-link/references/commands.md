@@ -46,3 +46,21 @@ and verify the copy's hash and eventual receipt. Do not copy adjacent files or
 broaden privacy permissions as a workaround. Inspect history before retrying
 an uncertain send. `--timeout` controls `wait`; file RPCs default to 30 minutes,
 so use a bounded caller when diagnosing a stalled operation.
+
+
+## Lifecycle (rc.11+)
+
+```sh
+agent-link session list
+agent-link session list --all --after 0 --limit 100
+agent-link session list --archived
+agent-link session gc --session FULL_WORKER --dry-run
+agent-link session gc --session FULL_WORKER --apply
+agent-link session pin
+agent-link session unpin
+agent-link session detach
+# In that same actual chat, resume the retained identity/scope:
+agent-link session attach --wake
+```
+
+MCP: `agent_link_session_list` accepts view `active|all|archived`; `agent_link_session_gc_preview` is read-only, while `session_gc_apply`, `session_pin/unpin/detach` require existing write opt-in and an issued retained session. Presence is adapter-local, not a model tool. Preview/apply skips running/approval/uncertain native admission and unfinished tasks/messages/files. Explicit inbox processing uses the rc.10 exact `inbox ack` workflow; reads never acknowledge. Archive/restore preserve history, ownership and existing pause/wake scope.

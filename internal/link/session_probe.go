@@ -137,6 +137,9 @@ type probeReply struct {
 }
 
 func (d *Daemon) markNativeAdmission(ctx context.Context, ep Endpoint, a APIRequest) (any, error) {
+	if !ep.ArchivedAt.IsZero() {
+		return nil, errors.New("archived chat cannot record new native admission")
+	}
 	if len(a.Messages) < 1 || len(a.Messages) > 20 || !ValidLabel(a.Code) || len(a.Code) != 32 {
 		return nil, errors.New("invalid native admission metadata")
 	}
@@ -154,6 +157,10 @@ func (d *Daemon) markNativeAdmission(ctx context.Context, ep Endpoint, a APIRequ
 		if e := d.Store.saveValue(ctx, "native-admission:"+id, v); e != nil {
 			return nil, e
 		}
+	}
+	ep.LastUsedAt = d.sessionNow()
+	if e := d.Store.saveValue(ctx, endpointKey(ep.Device, ep.Session), ep); e != nil {
+		return nil, e
 	}
 	return map[string]string{"status": "native_admission_recorded"}, nil
 }

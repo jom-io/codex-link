@@ -34,3 +34,13 @@ credentials:
 max_file_bytes: 1073741824         # 默认 1 GiB / Default 1 GiB
 stream_max_len: 10000              # 每设备约 10000 条；超出会裁剪 / Approximate per-device cap
 stream_ttl_hours: 720              # 最后写入后保留 30 天 / 30 days after last write
+
+# 会话生命周期；省略时使用以下默认值。不会删除聊天、消息或附件。
+sessions:
+  lease_seconds: 300
+  temporary_hours: 24
+  archive_days: 7
+  cache_stale_minutes: 10
+  cache_expire_days: 30
+  sweep_minutes: 60
+  disable_auto_gc: false

@@ -101,7 +101,8 @@ export class CodexIPC {
   async selectedChat(chat, signal) {
     const response = await this.request('thread-owner-discovery', { hostId: 'local', conversationId: chat }, CODEX_VERSIONS.owner, undefined, signal);
     const owner = response.handledByClientId;
-    if (typeof owner !== 'string' || response.result?.supportsUntrustedAppInput !== true) throw new Error('No compatible native owner for this Codex chat');
+    if (typeof owner !== 'string') { const error = new Error('No native owner for this Codex chat'); error.code = 'NATIVE_CHAT_MISSING'; throw error; }
+    if (response.result?.supportsUntrustedAppInput !== true) throw new Error('No compatible native owner for this Codex chat');
     const state = await new Promise((resolve, reject) => {
       const cleanup = () => { clearTimeout(timer); this.broadcasts.delete(receive); signal?.removeEventListener('abort', abort); };
       const abort = () => { cleanup(); reject(signal.reason ?? new Error('Codex snapshot aborted')); };

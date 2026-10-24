@@ -18,19 +18,21 @@ import (
 )
 
 type Daemon struct {
-	pairMu     sync.Mutex
-	registryMu sync.Mutex
-	Config     Config
-	Home       string
-	Store      *Store
-	Transport  *Transport
-	Files      *Files
-	Direct     *directRouter
-	mu         sync.Mutex
-	changed    chan struct{}
-	fileMu     fileLocks
-	statusMu   sync.Mutex
-	connected  bool
+	lifecycleStarted time.Time
+	lifecycleNow     func() time.Time
+	pairMu           sync.Mutex
+	registryMu       sync.Mutex
+	Config           Config
+	Home             string
+	Store            *Store
+	Transport        *Transport
+	Files            *Files
+	Direct           *directRouter
+	mu               sync.Mutex
+	changed          chan struct{}
+	fileMu           fileLocks
+	statusMu         sync.Mutex
+	connected        bool
 }
 
 func (d *Daemon) notify() {
@@ -156,12 +158,16 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 		files = newLocalFiles(c, home)
 	}
 	d := &Daemon{Config: c, Home: home, Store: store, Transport: transport, Files: files, changed: make(chan struct{})}
+	if e = d.initLifecycle(ctx); e != nil {
+		return e
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stopDirect := startDirect(runCtx, d)
 	defer stopDirect()
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
+	go func() { defer wg.Done(); d.lifecycleLoop(runCtx) }()
 	go func() { defer wg.Done(); d.receive(runCtx) }()
 	go func() { defer wg.Done(); d.send(runCtx) }()
 	go func() { defer wg.Done(); d.sendFiles(runCtx) }()
@@ -190,6 +196,8 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
+	View          string   `json:"view,omitempty"`
+	Apply         bool     `json:"apply,omitempty"`
 	Messages      []string `json:"messages,omitempty"`
 	Name          string   `json:"name,omitempty"`
 	Agent         string   `json:"agent,omitempty"`
@@ -247,7 +255,12 @@ func (d *Daemon) Handler() http.Handler {
 	})
 	return mux
 }
-func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, error) {
+func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (out any, err error) {
+	defer func() {
+		if err == nil && a.Session != "" && (path == "/v1/send" || path == "/v1/file/send" || path == "/v1/inbox/ack" || path == "/v1/task/claim" || path == "/v1/task/complete") {
+			d.touchSession(ctx, a.Session)
+		}
+	}()
 	if strings.HasPrefix(path, "/v1/session/") || path == "/v1/bind" || path == "/v1/bindings" || path == "/v1/unbind" || path == "/v1/wake/eligible" {
 		return d.sessionDispatch(ctx, path, a)
 	}
@@ -376,6 +389,11 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		}
 		if kind == "receipt" || strings.HasPrefix(kind, "pair_") {
 			return nil, errors.New("receipts are internal")
+		}
+		if kind != "result" {
+			if e = d.checkArchivedSend(ctx, a.Session, to, a.ToSession); e != nil {
+				return nil, e
+			}
 		}
 		m := d.base(to, kind)
 		m.Text = a.Text

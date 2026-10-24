@@ -332,11 +332,19 @@ func (w *Watcher) Step(ctx context.Context, deliver Deliver, now time.Time) (tim
 			return 3 * time.Second, e
 		}
 		var policy struct {
-			Paused bool `json:"paused"`
-			Wake   bool `json:"wake"`
+			Paused   bool `json:"paused"`
+			Archived bool `json:"archived"`
+			Wake     bool `json:"wake"`
 		}
 		if e = json.Unmarshal(raw, &policy); e != nil {
 			return 3 * time.Second, e
+		}
+		if policy.Archived {
+			w.state.Status = "archived"
+			if e = w.save(); e != nil {
+				return 0, e
+			}
+			return 0, errArchived
 		}
 		if policy.Paused || !policy.Wake {
 			w.state.Status = "paused"
@@ -419,10 +427,20 @@ func (w *Watcher) Step(ctx context.Context, deliver Deliver, now time.Time) (tim
 	return w.config.Cooldown, w.save()
 }
 
+var errArchived = errors.New("chat is archived")
+
 func (w *Watcher) Run(ctx context.Context, deliver Deliver) error {
-	defer func() { w.state.Status = "stopped"; w.save() }()
+	defer func() {
+		if w.state.Status != "archived" {
+			w.state.Status = "stopped"
+		}
+		w.save()
+	}()
 	for ctx.Err() == nil {
 		delay, err := w.Step(ctx, deliver, time.Now())
+		if errors.Is(err, errArchived) {
+			return nil
+		}
 		if err != nil && w.state.Failures >= 3 {
 			return err
 		}

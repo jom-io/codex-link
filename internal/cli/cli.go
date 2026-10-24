@@ -39,6 +39,9 @@ Setup:
   doctor [--files]                Test Redis and optional OSS round trip
   daemon run|install|start|stop|uninstall
 
+Session lifecycle: session list [--all|--archived], session gc [--dry-run|--apply]
+  detach refuses native/pending-work protections; attach restores the same chat
+
 Communication (JSON output):
   session attach [--name ALIAS] [--wake]  Register/resume THIS native chat
   session list [--to PAIRED_DEVICE] | current | pause | resume

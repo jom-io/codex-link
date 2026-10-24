@@ -16,11 +16,12 @@ import (
 )
 
 type Config struct {
-	PairingHeadless bool   `json:"pairing_headless,omitempty" yaml:"pairing_headless,omitempty"`
-	DeviceID        string `json:"device_id" yaml:"device_id"`
-	Name            string `json:"name" yaml:"name"`
-	Workspace       string `json:"workspace" yaml:"workspace"`
-	Routing         string `json:"routing,omitempty" yaml:"routing,omitempty"`
+	Sessions        SessionPolicy `json:"sessions,omitempty" yaml:"sessions,omitempty"`
+	PairingHeadless bool          `json:"pairing_headless,omitempty" yaml:"pairing_headless,omitempty"`
+	DeviceID        string        `json:"device_id" yaml:"device_id"`
+	Name            string        `json:"name" yaml:"name"`
+	Workspace       string        `json:"workspace" yaml:"workspace"`
+	Routing         string        `json:"routing,omitempty" yaml:"routing,omitempty"`
 	Redis           struct {
 		Address       string `json:"address" yaml:"address"`
 		Username      string `json:"username,omitempty" yaml:"username,omitempty"`
@@ -82,6 +83,7 @@ func LoadConfig(home string) (Config, error) {
 	return c, c.Validate()
 }
 func (c *Config) Defaults() {
+	c.Sessions.defaults()
 	if c.Routing == "" {
 		c.Routing = "auto"
 	}
@@ -108,6 +110,9 @@ func (c *Config) Defaults() {
 	}
 }
 func (c Config) Validate() error {
+	if e := c.Sessions.validate(); e != nil {
+		return e
+	}
 	if c.Routing != "" && c.Routing != "auto" && c.Routing != "cloud" {
 		return errors.New("routing must be auto or cloud")
 	}

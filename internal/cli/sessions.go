@@ -91,12 +91,23 @@ func serveSessions(home string, args []string) error {
 		rest = rest[1:]
 	}
 	switch op {
-	case "session/verify", "session/attach", "session/list", "session/current", "session/pause", "session/resume", "session/receiver", "bind", "bindings", "unbind":
+	case "session/verify", "session/attach", "session/list", "session/current", "session/pause", "session/resume", "session/receiver", "session/presence", "session/gc", "session/detach", "session/pin", "session/unpin", "bind", "bindings", "unbind":
 	default:
 		return errors.New("unknown session operation")
 	}
 	var a link.APIRequest
+	if op == "session/list" {
+		a.View = "active"
+	}
 	fs := flag.NewFlagSet(op, flag.ContinueOnError)
+	var listAll, archived, dryRun bool
+	fs.BoolVar(&listAll, "all", false, "include offline and archived registry records")
+	fs.BoolVar(&archived, "archived", false, "show archived/withdrawn records")
+	fs.BoolVar(&dryRun, "dry-run", false, "preview only (gc default)")
+	fs.BoolVar(&a.Apply, "apply", false, "apply safe soft archival; no history deletion")
+	fs.StringVar(&a.View, "view", a.View, "active, all or archived")
+	fs.Int64Var(&a.After, "after", 0, "list offset")
+	fs.IntVar(&a.Limit, "limit", 0, "maximum list records; zero means all matches")
 	fs.StringVar(&a.Session, "session", "", "retained full worker; inferred from this native chat if omitted")
 	fs.StringVar(&a.NativeSession, "native-session", "", "native ID supplied by this chat's host context")
 	fs.StringVar(&a.Harness, "harness", "", "codex, deepseek-harness, claude-code, or another host")
@@ -131,6 +142,18 @@ func serveSessions(home string, args []string) error {
 	} else if fs.NArg() != 0 {
 		return errors.New("unexpected session arguments")
 	}
+	if dryRun && a.Apply {
+		return errors.New("dry-run and apply cannot be combined")
+	}
+	if listAll {
+		a.View = "all"
+	}
+	if archived {
+		if listAll {
+			return errors.New("all and archived cannot be combined")
+		}
+		a.View = "archived"
+	}
 	a.Targets = targets
 	if messages != "" {
 		a.Messages = strings.Split(messages, ",")
@@ -142,9 +165,24 @@ func serveSessions(home string, args []string) error {
 			return e
 		}
 		legacyWorker(home, &a)
-	} else if op != "session/list" {
+	} else if op != "session/list" && op != "session/gc" {
 		if e := currentSession(ctx, home, &a); e != nil {
 			return e
+		}
+	}
+	if op == "session/detach" {
+		current, e := link.Call(ctx, home, "session/current", a)
+		if e != nil {
+			return e
+		}
+		var ep link.Endpoint
+		if e = json.Unmarshal(current, &ep); e != nil {
+			return e
+		}
+		if ep.Harness == "codex" {
+			if e = observeCodexReceiver(ctx, current); e != nil {
+				return e
+			}
 		}
 	}
 	raw, e := link.Call(ctx, home, op, a)
@@ -185,6 +223,26 @@ func enableCodexReceiver(ctx context.Context, raw json.RawMessage) error {
 	out, e := cmd.CombinedOutput()
 	if e != nil {
 		return errors.New("chat registered; native receiver not enabled: " + strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func observeCodexReceiver(ctx context.Context, raw json.RawMessage) error {
+	exe, e := os.Executable()
+	if e != nil {
+		return e
+	}
+	node, e := exec.LookPath("node")
+	if e != nil {
+		return e
+	}
+	adapter := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "agent-link", "adapters", "session-host.mjs")
+	cmd := exec.CommandContext(ctx, node, adapter, "observe-codex")
+	cmd.Env = append(os.Environ(), "AGENT_LINK_CLI_PATH="+exe)
+	cmd.Stdin = strings.NewReader(string(raw))
+	out, e := cmd.CombinedOutput()
+	if e != nil {
+		return errors.New("native presence could not be checked: " + strings.TrimSpace(string(out)))
 	}
 	return nil
 }

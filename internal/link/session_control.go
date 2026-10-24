@@ -13,6 +13,9 @@ import (
 const controlPrefix = "agent-link/control/v1:"
 
 type sessionControl struct {
+	Snapshot  string     `json:"snapshot,omitempty"`
+	Page      int        `json:"page,omitempty"`
+	Pages     int        `json:"pages,omitempty"`
 	Op        string     `json:"op"`
 	Request   string     `json:"request,omitempty"`
 	Endpoints []Endpoint `json:"endpoints,omitempty"`
@@ -39,7 +42,7 @@ func (d *Daemon) control(ctx context.Context, to, session, target string, c sess
 	return m, nil
 }
 func validPublicEndpoint(v Endpoint, device string) bool {
-	return v.Device == device && ValidLabel(v.ID) && ValidLabel(v.Session) && ValidLabel(v.Alias) && ValidLabel(v.Harness) && ValidLabel(v.DeviceName) && v.NativeSession == "" && v.Profile == "" && v.StatePath == "" && !v.Local && v.Receiver == "" && v.ReceiverAt.IsZero() && !v.CreatedAt.IsZero()
+	return publicLifecycleValid(v) && v.Device == device && ValidLabel(v.ID) && ValidLabel(v.Session) && ValidLabel(v.Alias) && ValidLabel(v.Harness) && ValidLabel(v.DeviceName) && v.NativeSession == "" && v.Profile == "" && v.StatePath == "" && !v.Local && v.Receiver == "" && v.ReceiverAt.IsZero() && !v.CreatedAt.IsZero()
 }
 func parseControl(m Message) (sessionControl, error) {
 	var c sessionControl
@@ -87,40 +90,15 @@ func (d *Daemon) receiveControl(ctx context.Context, m Message) error {
 		if c.Request != "" || c.Source != nil || len(c.Endpoints) != 0 || m.ToSession != "" {
 			return nil
 		}
-		all, e := d.Store.Endpoints(ctx)
-		if e != nil {
-			return e
-		}
-		out := []Endpoint{}
-		for _, ep := range all {
-			if ep.Local {
-				out = append(out, publicEndpoint(ep))
-				if len(out) == 64 {
-					break
-				}
-			}
-		}
-		if _, e = d.control(ctx, m.From, "", "", sessionControl{Op: "directory", Request: m.ID, Endpoints: out}); e != nil {
+		if e = d.replyDirectory(ctx, m); e != nil {
 			return e
 		}
 	case "directory":
-		q, e := d.Store.Get(ctx, c.Request)
-		if e != nil || q.Direction != "out" || q.Message.To != m.From {
-			return nil
+		if e = d.receiveLegacyDirectory(ctx, m, c); e != nil {
+			return e
 		}
-		query, e := parseControl(q.Message)
-		if e != nil || query.Op != "query" {
-			return nil
-		}
-		for _, ep := range c.Endpoints {
-			if ep.Device == d.Config.DeviceID {
-				continue
-			}
-			if e = d.Store.saveValue(ctx, endpointKey(ep.Device, ep.Session), ep); e != nil {
-				return e
-			}
-		}
-		if e = d.Store.setMetadata(ctx, "directory-ready:"+m.From, m.ID); e != nil {
+	case "directory_page":
+		if e = d.receiveDirectoryPage(ctx, m, c); e != nil {
 			return e
 		}
 	case "invite":
@@ -182,10 +160,13 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 	d.registryMu.Lock()
 	defer d.registryMu.Unlock()
 	switch path {
+	case "/v1/session/presence", "/v1/session/gc", "/v1/session/detach", "/v1/session/pin", "/v1/session/unpin":
+		return d.lifecycleDispatch(ctx, path, a)
 	case "/v1/session/verify":
 		return d.verifyProbe(ctx, a)
 	case "/v1/session/attach":
-		return d.attach(ctx, a)
+		ep, e := d.attach(ctx, a)
+		return d.endpointView(ep, d.sessionNow()), e
 	case "/v1/session/list":
 		if a.To != "" {
 			to, e := d.Transport.Resolve(ctx, a.To)
@@ -201,10 +182,16 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 				if e != nil {
 					return nil, e
 				}
+				if e = d.Store.setMetadata(ctx, "directory-latest:"+to, m.ID); e != nil {
+					return nil, e
+				}
+				if _, e = d.Store.db.ExecContext(ctx, "DELETE FROM metadata WHERE key LIKE ?", "directory-parts:"+to+":%"); e != nil {
+					return nil, e
+				}
 				return map[string]any{"status": "directory_requested", "id": m.ID, "next": "run session list again after delivery; no reply means unsupported or offline"}, nil
 			}
 		}
-		return d.Store.Endpoints(ctx)
+		return d.listSessions(ctx, a)
 	case "/v1/session/current":
 		if a.NativeSession != "" {
 			all, e := d.Store.Endpoints(ctx)
@@ -213,12 +200,13 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 			}
 			for _, v := range all {
 				if v.Local && v.NativeSession == a.NativeSession && v.Harness == a.Harness && v.Profile == a.Profile {
-					return v, nil
+					return d.endpointView(v, d.sessionNow()), nil
 				}
 			}
 			return nil, errors.New("current native chat is not registered")
 		}
-		return d.localEndpoint(ctx, a.Session)
+		ep, e := d.localEndpoint(ctx, a.Session)
+		return d.endpointView(ep, d.sessionNow()), e
 	case "/v1/session/pause", "/v1/session/resume", "/v1/session/receiver":
 		ep, e := d.localEndpoint(ctx, a.Session)
 		if e != nil {
@@ -236,7 +224,7 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 			}
 			ep.Receiver = a.State
 			ep.ReceiverAt = time.Now().UTC()
-			if a.State == "connected" {
+			if a.State == "connected" && ep.ArchivedAt.IsZero() {
 				bs, e := d.Store.Bindings(ctx, ep.Session)
 				if e != nil {
 					return nil, e
@@ -263,6 +251,9 @@ func (d *Daemon) sessionDispatch(ctx context.Context, path string, a APIRequest)
 		ep, e := d.localEndpoint(ctx, a.Session)
 		if e != nil {
 			return nil, e
+		}
+		if !ep.ArchivedAt.IsZero() {
+			return nil, errors.New("chat is archived; attach to restore before binding")
 		}
 		if a.ID != "" { // Accept precisely one locally received invitation in this chat.
 			bs, e := d.Store.Bindings(ctx, a.Session)

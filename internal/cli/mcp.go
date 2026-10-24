@@ -100,7 +100,8 @@ func (s *mcpServer) tools() []mcpTool {
 	add("context", "context", "Get this adapter's harness/session and permissions. Keep this session stable; routing is not access control.", nil, nil, true)
 	add("worker_new", "worker/new", "Allocate a unique local session for a new chat/window when a harness shares one MCP process across chats. Call once per chat and pass the returned session on subsequent tool calls. Does not claim a task or change the daemon.", nil, nil, true)
 	add("status", "status", "Check daemon version and Redis connection. Delivery is not execution.", nil, nil, true)
-	add("session_list", "session/list", "List registered logical chat endpoints; native IDs and paths remain local. Supplying to requests a paired device directory asynchronously; list again after delivery.", map[string]any{"to": str("Optional paired device for directory refresh")}, nil, true)
+	add("session_list", "session/list", "List registered logical chat endpoints; native IDs and paths remain local. Supplying to requests a paired device directory asynchronously; list again after delivery.", map[string]any{"to": str("Optional paired device for directory refresh"), "view": map[string]any{"type": "string", "enum": []string{"active", "all", "archived"}}, "after": integer(0, 1000000), "limit": integer(1, 1000)}, nil, true)
+	add("session_gc_preview", "session/gc", "Preview safe soft-archive eligibility for THIS retained chat. Never deletes history or claims tasks.", nil, nil, true)
 	add("session_current", "session/current", "Look up an already registered chat using host-provided native context; never use a recent chat as a substitute.", map[string]any{"native_session": str("Actual current native chat ID from host context"), "harness": str("Actual host label"), "profile": str("Host profile, default: default")}, nil, true)
 	add("bindings", "bindings", "List this retained chat's proposed, invited and accepted channel peers. Metadata does not wake a model.", nil, nil, true)
 	add("peers", "peers", "List devices and pairing state. Names alone do not establish trust.", nil, nil, true)
@@ -120,6 +121,10 @@ func (s *mcpServer) tools() []mcpTool {
 		add("inbox_ack", "inbox/ack", "Mark exact messages already handled by THIS retained chat so they cannot trigger a late wake. Reading does not acknowledge. Keeps history and ownership; unfinished tasks cannot be acknowledged. Never acknowledge another chat's messages.", map[string]any{"messages": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "maxItems": 32}}, []string{"messages"}, false)
 		out[len(out)-1].Annotations = map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
 		add("session_attach", "session/attach", "Register/resume THIS chat from its host-provided native ID. Same native chat retains its worker across MCP restarts; another chat gets a different identity. Never guess or use another chat ID. Optional alias otherwise uses device/host/time/short ID.", map[string]any{"native_session": str("This chat's real native ID from host context, e.g. DSH_SESSION_ID or CODEX_THREAD_ID"), "harness": str("Actual host: codex, deepseek-harness, claude-code, etc."), "profile": str("Host configuration instance, default: default"), "name": str("Optional display alias"), "enable_wake": map[string]any{"type": "boolean", "description": "Explicitly enable native receiver for this chat"}}, []string{"native_session", "harness"}, false)
+		for _, action := range []string{"detach", "pin", "unpin"} {
+			add("session_"+action, "session/"+action, "Update THIS chat lifecycle only. Detach requires a fresh native observation and refuses running/approval/task/message protections; attach restores original identity and bindings.", nil, nil, false)
+		}
+		add("session_gc_apply", "session/gc", "Apply only eligible soft archival for THIS chat; respects all pending work and native-state protections. No history deletion.", nil, nil, false)
 		add("session_verify", "session/verify", "Complete an owned non-secret binding probe from THIS exact chat. A matching real model reply is distinct from native admission.", map[string]any{"id": str("Probe task ID; claim it first")}, []string{"id"}, false)
 		for _, action := range []string{"pause", "resume"} {
 			add("session_"+action, "session/"+action, "Persistently pause/resume this registered chat's notifications; keep messages, leases and history.", nil, nil, false)
@@ -211,7 +216,7 @@ func (s *mcpServer) toolCall(ctx context.Context, name string, args json.RawMess
 			return nil, fmt.Errorf("required argument: %s", k)
 		}
 	}
-	a := link.APIRequest{Profile: "default", Session: s.session, Limit: 100, Timeout: 30, Lease: 900, State: "working", Kind: "text"}
+	a := link.APIRequest{View: "active", Profile: "default", Session: s.session, Limit: 100, Timeout: 30, Lease: 900, State: "working", Kind: "text"}
 	if err := json.Unmarshal(args, &a); err != nil {
 		return nil, errors.New("invalid tool arguments")
 	}
@@ -265,6 +270,24 @@ func (s *mcpServer) toolCall(ctx context.Context, name string, args json.RawMess
 	}
 	if !s.sessions[a.Session] {
 		return nil, errors.New("session must be issued by this MCP process (agent_link_worker_new), or supplied when starting it with --session")
+	}
+	if name == "agent_link_session_gc_apply" {
+		a.Apply = true
+	}
+	if tool.op == "session/detach" {
+		raw, e := s.call(ctx, s.home, "session/current", link.APIRequest{Session: a.Session})
+		if e != nil {
+			return nil, e
+		}
+		var ep link.Endpoint
+		if e = json.Unmarshal(raw, &ep); e != nil {
+			return nil, e
+		}
+		if ep.Harness == "codex" {
+			if e = observeCodexReceiver(ctx, raw); e != nil {
+				return nil, e
+			}
+		}
 	}
 	if tool.op == "context" {
 		return map[string]any{"session": a.Session, "agent": s.agent, "harness": s.harness, "allow_write": s.write, "allow_files": s.files, "task_executor": false}, nil

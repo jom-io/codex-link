@@ -203,3 +203,42 @@ func TestMCPPersistentChatAttachAcrossProcessRestart(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPLifecycleScopeAndPermissions(t *testing.T) {
+	calls := 0
+	s := mcpServer{session: "retained-lifecycle", call: func(_ context.Context, _, op string, a link.APIRequest) (json.RawMessage, error) {
+		calls++
+		if op != "session/gc" || a.Session != "retained-lifecycle" {
+			t.Fatal(op, a)
+		}
+		return json.RawMessage(`[]`), nil
+	}}
+	ctx := context.Background()
+	for _, tool := range s.tools() {
+		if tool.Name == "agent_link_session_presence" || tool.Name == "agent_link_session_gc_apply" || tool.Name == "agent_link_session_detach" {
+			t.Fatal("readonly exposed lifecycle write/observation", tool.Name)
+		}
+	}
+	if _, e := s.toolCall(ctx, "agent_link_session_gc_preview", json.RawMessage(`{}`)); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.toolCall(ctx, "agent_link_session_gc_preview", json.RawMessage(`{"session":"another-chat"}`)); e == nil || calls != 1 {
+		t.Fatal("foreign preview reached daemon", e, calls)
+	}
+	if _, e := s.toolCall(ctx, "agent_link_session_gc_apply", json.RawMessage(`{}`)); e == nil || calls != 1 {
+		t.Fatal("readonly apply accepted", e, calls)
+	}
+	s.write = true
+	s.call = func(_ context.Context, _, op string, a link.APIRequest) (json.RawMessage, error) {
+		if op != "session/gc" || !a.Apply || a.Session != "retained-lifecycle" {
+			t.Fatal(op, a)
+		}
+		return json.RawMessage(`[]`), nil
+	}
+	if _, e := s.toolCall(ctx, "agent_link_session_gc_apply", json.RawMessage(`{}`)); e != nil {
+		t.Fatal(e)
+	}
+	if s.files {
+		t.Fatal("lifecycle enabled files")
+	}
+}
