@@ -1,13 +1,14 @@
-# codex-link 首次安装配置模板 / First-run configuration template
+# agent-link 首次安装配置模板 / First-run configuration template
 # 填写 config.local.yaml；该文件已加入 .gitignore，切勿上传或发到聊天里。
 # Edit config.local.yaml; it is gitignored. Never commit or paste real credentials.
 # 两台 Mac 使用相同 workspace；首次联系时两边点击确认自动配对，name 应不同。
 # Both Macs share a workspace; confirm the first pairing on both devices. Names differ.
-# 导入：codex-link init --config /absolute/path/config.local.yaml
+# 导入：agent-link init --config /absolute/path/config.local.yaml
 # 导入后凭据进入 macOS Keychain，普通 config.json 不包含凭据。
 
 name: home-mac                    # 另一台可用 office-mac / Other Mac: office-mac
 workspace: personal
+routing: auto                     # 同机→私网直连→云端；cloud 仅禁用直连 / local→LAN→cloud
 
 redis:
   address: "CHANGE_ME_REDIS_HOST:6380" # host:port，不含 redis:// / no URL scheme
@@ -21,8 +22,8 @@ oss:
   region: "cn-hangzhou"            # 自定义 endpoint 必填；标准 endpoint 可自动推导
   bucket: "CHANGE_ME_PRIVATE_BUCKET"
   prefix: "codex-link"             # 两台相同；RAM 权限限定此路径 / Shared restricted prefix
-  # 不使用文件传输时，将 endpoint 和 bucket 都改为空字符串。
-  # To disable file transfers, set endpoint and bucket to empty strings.
+  # 不使用云端文件回退时，可将 endpoint 和 bucket 都改为空字符串。
+  # Empty endpoint/bucket disable OSS fallback; local/LAN files still work.
 
 credentials:
   redis_password: "CHANGE_ME_REDIS_PASSWORD"
@@ -33,3 +34,13 @@ credentials:
 max_file_bytes: 1073741824         # 默认 1 GiB / Default 1 GiB
 stream_max_len: 10000              # 每设备约 10000 条；超出会裁剪 / Approximate per-device cap
 stream_ttl_hours: 720              # 最后写入后保留 30 天 / 30 days after last write
+
+# 会话生命周期；省略时使用以下默认值。不会删除聊天、消息或附件。
+sessions:
+  lease_seconds: 300
+  temporary_hours: 24
+  archive_days: 7
+  cache_stale_minutes: 10
+  cache_expire_days: 30
+  sweep_minutes: 60
+  disable_auto_gc: false

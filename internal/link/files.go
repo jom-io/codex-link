@@ -192,62 +192,6 @@ func (f *Files) Upload(ctx context.Context, path, to, key string) (*FileRef, err
 	}
 	return &FileRef{object, filepath.Base(path), n, hash}, nil
 }
-func (f *Files) Download(ctx context.Context, m Message, key string) (string, error) {
-	if m.File == nil {
-		return "", errors.New("message has no file")
-	}
-	r := m.File
-	prefix := f.root + f.config.DeviceID + "/"
-	suffix := strings.TrimPrefix(r.Object, prefix)
-	if !strings.HasPrefix(r.Object, prefix) || !ValidLabel(suffix) || r.Size > f.config.MaxFileBytes || r.Size < 0 {
-		return "", errors.New("invalid file object or size")
-	}
-	if !ValidLabel(m.ID) {
-		return "", errors.New("invalid message ID")
-	}
-	name := filepath.Base(r.Name)
-	if name == "." || name == ".." || name == "/" || strings.ContainsAny(name, "\\\x00") {
-		return "", errors.New("invalid file name")
-	}
-	dir := filepath.Join(f.home, "files", m.ID)
-	if e := os.MkdirAll(dir, 0700); e != nil {
-		return "", e
-	}
-	path := filepath.Join(dir, name)
-	if existing, e := os.Open(path); e == nil {
-		h := sha256.New()
-		n, e := io.Copy(h, io.LimitReader(existing, f.config.MaxFileBytes+1))
-		existing.Close()
-		if e == nil && n == r.Size && hex.EncodeToString(h.Sum(nil)) == r.SHA256 {
-			return path, nil
-		}
-	}
-	body, e := f.bucket.GetObject(r.Object, oss.WithContext(ctx))
-	if e != nil {
-		return "", errors.New("OSS download failed; file may have expired or credentials need renewal")
-	}
-	defer body.Close()
-	tmp, e := os.CreateTemp(dir, ".download-*")
-	if e != nil {
-		return "", e
-	}
-	defer os.Remove(tmp.Name())
-	n, hash, e := decryptFile(tmp, body, key, r.Object, f.config.MaxFileBytes)
-	ce := tmp.Close()
-	if e != nil {
-		return "", e
-	}
-	if ce != nil {
-		return "", ce
-	}
-	if n != r.Size || hash != r.SHA256 {
-		return "", errors.New("file size or SHA-256 mismatch")
-	}
-	if e = os.Rename(tmp.Name(), path); e != nil {
-		return "", e
-	}
-	return path, nil
-}
 
 // Check verifies the configured bucket with an encrypted round trip and removes the probe.
 func (f *Files) Check(ctx context.Context) error {

@@ -18,17 +18,21 @@ import (
 )
 
 type Daemon struct {
-	pairMu    sync.Mutex
-	Config    Config
-	Home      string
-	Store     *Store
-	Transport *Transport
-	Files     *Files
-	mu        sync.Mutex
-	changed   chan struct{}
-	fileMu    sync.Mutex
-	statusMu  sync.Mutex
-	connected bool
+	lifecycleStarted time.Time
+	lifecycleNow     func() time.Time
+	pairMu           sync.Mutex
+	registryMu       sync.Mutex
+	Config           Config
+	Home             string
+	Store            *Store
+	Transport        *Transport
+	Files            *Files
+	Direct           *directRouter
+	mu               sync.Mutex
+	changed          chan struct{}
+	fileMu           fileLocks
+	statusMu         sync.Mutex
+	connected        bool
 }
 
 func (d *Daemon) notify() {
@@ -83,71 +87,16 @@ func (d *Daemon) receive(ctx context.Context) {
 				d.notify()
 				continue
 			}
-			if m.Activity != nil {
-				if m.Kind != "progress" || m.Activity.TaskID != m.ReplyTo || m.Activity.Worker != m.Session {
-					log.Print("rejected invalid activity")
-					continue
-				}
-				if e := d.Store.SaveActivity(ctx, m.From, *m.Activity); e != nil {
-					log.Print("rejected invalid activity")
-					continue
-				}
-			}
 			if m.Kind != "receipt" {
 				v := d.base(m.From, "receipt")
 				v.ReplyTo = m.ID
 				receipt = &v
 			}
-			if e = d.Store.Accept(ctx, &m, r.ID, receipt); e != nil {
+			if e = d.acceptIncoming(ctx, m, r.ID, receipt, "cloud"); e != nil {
 				log.Print("message persistence failed; will retry")
 				break
 			}
 			d.notify()
-		}
-	}
-}
-func (d *Daemon) send(ctx context.Context) {
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	heart := time.NewTicker(30 * time.Second)
-	defer heart.Stop()
-	heartbeat := func() {
-		c, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		e := d.Transport.Heartbeat(c)
-		d.setConnected(e == nil)
-	}
-	heartbeat()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-heart.C:
-			heartbeat()
-			d.checkActivity(ctx)
-		case <-tick.C:
-			rs, e := d.Store.Pending(ctx)
-			if e != nil {
-				log.Print("outbox read failed")
-				continue
-			}
-			for _, r := range rs {
-				c, cancel := context.WithTimeout(ctx, 10*time.Second)
-				e = d.Transport.Publish(c, r.Message)
-				cancel()
-				if errors.Is(e, ErrNotPaired) {
-					continue
-				}
-				if e != nil {
-					d.setConnected(false)
-					break
-				}
-				d.setConnected(true)
-				if e = d.Store.MarkSent(ctx, r.Message.ID); e != nil {
-					log.Print("outbox state persistence failed")
-					break
-				}
-			}
 		}
 	}
 }
@@ -205,13 +154,24 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 	defer transport.Close()
 	transport.store = store
 	files, _ := NewFiles(c, s, home)
+	if files == nil {
+		files = newLocalFiles(c, home)
+	}
 	d := &Daemon{Config: c, Home: home, Store: store, Transport: transport, Files: files, changed: make(chan struct{})}
+	if e = d.initLifecycle(ctx); e != nil {
+		return e
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	stopDirect := startDirect(runCtx, d)
+	defer stopDirect()
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(6)
+	go func() { defer wg.Done(); d.lifecycleLoop(runCtx) }()
 	go func() { defer wg.Done(); d.receive(runCtx) }()
 	go func() { defer wg.Done(); d.send(runCtx) }()
+	go func() { defer wg.Done(); d.sendFiles(runCtx) }()
+	go func() { defer wg.Done(); d.heartbeat(runCtx) }()
 	go func() { defer wg.Done(); d.prompts(runCtx) }()
 	server := &http.Server{Handler: d.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan error, 1)
@@ -236,23 +196,36 @@ func RunDaemonWith(ctx context.Context, home string, c Config, s Secrets) error 
 }
 
 type APIRequest struct {
-	State        string `json:"state,omitempty"`
-	Stage        string `json:"stage,omitempty"`
-	Code         string `json:"code,omitempty"`
-	To           string `json:"to,omitempty"`
-	Text         string `json:"text,omitempty"`
-	Kind         string `json:"kind,omitempty"`
-	Session      string `json:"session,omitempty"`
-	ToSession    string `json:"to_session,omitempty"`
-	Conversation string `json:"conversation,omitempty"`
-	ReplyTo      string `json:"reply_to,omitempty"`
-	ID           string `json:"id,omitempty"`
-	Path         string `json:"path,omitempty"`
-	After        int64  `json:"after"`
-	Limit        int    `json:"limit,omitempty"`
-	History      bool   `json:"history,omitempty"`
-	Timeout      int    `json:"timeout,omitempty"`
-	Lease        int    `json:"lease,omitempty"`
+	View          string   `json:"view,omitempty"`
+	Apply         bool     `json:"apply,omitempty"`
+	Messages      []string `json:"messages,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Agent         string   `json:"agent,omitempty"`
+	Harness       string   `json:"harness,omitempty"`
+	Profile       string   `json:"profile,omitempty"`
+	NativeSession string   `json:"native_session,omitempty"`
+	EnableWake    bool     `json:"enable_wake,omitempty"`
+	TextWake      bool     `json:"text_wake,omitempty"`
+	All           bool     `json:"all,omitempty"`
+	Targets       []string `json:"targets,omitempty"`
+	Channel       string   `json:"channel,omitempty"`
+	State         string   `json:"state,omitempty"`
+	Stage         string   `json:"stage,omitempty"`
+	Code          string   `json:"code,omitempty"`
+	To            string   `json:"to,omitempty"`
+	Text          string   `json:"text,omitempty"`
+	Kind          string   `json:"kind,omitempty"`
+	Session       string   `json:"session,omitempty"`
+	ToSession     string   `json:"to_session,omitempty"`
+	Conversation  string   `json:"conversation,omitempty"`
+	ReplyTo       string   `json:"reply_to,omitempty"`
+	ID            string   `json:"id,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	After         int64    `json:"after"`
+	Limit         int      `json:"limit,omitempty"`
+	History       bool     `json:"history,omitempty"`
+	Timeout       int      `json:"timeout,omitempty"`
+	Lease         int      `json:"lease,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -282,8 +255,43 @@ func (d *Daemon) Handler() http.Handler {
 	})
 	return mux
 }
-func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, error) {
+func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (out any, err error) {
+	defer func() {
+		if err == nil && a.Session != "" && (path == "/v1/send" || path == "/v1/file/send" || path == "/v1/inbox/ack" || path == "/v1/task/claim" || path == "/v1/task/complete") {
+			d.touchSession(ctx, a.Session)
+		}
+	}()
+	if strings.HasPrefix(path, "/v1/session/") || path == "/v1/bind" || path == "/v1/bindings" || path == "/v1/unbind" || path == "/v1/wake/eligible" {
+		return d.sessionDispatch(ctx, path, a)
+	}
+	if a.Channel != "" {
+		if (path == "/v1/send" || path == "/v1/file/send") && a.All {
+			return d.channelFanout(ctx, path, a)
+		}
+		var e error
+		if path == "/v1/send" || path == "/v1/file/send" {
+			a, e = d.resolveChannelRecipient(ctx, a)
+		} else {
+			if a.Conversation != "" {
+				return nil, errors.New("channel and conversation cannot be combined")
+			}
+			a.Conversation, e = d.channel(ctx, a.Session, a.Channel)
+		}
+		if e != nil {
+			return nil, e
+		}
+	}
 	switch path {
+	case "/v1/inbox/ack":
+		n, e := d.Store.AckInbox(ctx, d.Config.DeviceID, a.Session, a.Messages)
+		if e != nil {
+			return nil, e
+		}
+		d.notify()
+		return map[string]any{"status": "acknowledged", "session": a.Session, "messages": a.Messages, "acknowledged": n}, nil
+	case "/v1/inbox/handled":
+		handled, e := d.Store.InboxHandled(ctx, a.Session, a.ID)
+		return map[string]any{"handled": handled}, e
 	case "/v1/workers", "/v1/task/status":
 		return d.Store.Activities(ctx, a.ID)
 	case "/v1/worker/pulse":
@@ -306,13 +314,32 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		return d.Store.Activities(ctx, a.ID)
 	case "/v1/status":
 		n, e := d.Store.MaxSeq(ctx)
-		return map[string]any{"version": Version, "protocol": ProtocolVersion, "device_id": d.Config.DeviceID, "name": d.Config.Name, "workspace": d.Config.Workspace, "redis_connected": d.isConnected(), "oss_configured": d.Files != nil, "last_seq": n}, e
+		return map[string]any{"version": Version, "protocol": ProtocolVersion, "device_id": d.Config.DeviceID, "name": d.Config.Name, "workspace": d.Config.Workspace, "redis_connected": d.isConnected(), "oss_configured": d.Files != nil && d.Files.bucket != nil, "routing": d.Config.Routing, "lan_listening": d.Direct != nil, "last_seq": n}, e
 	case "/v1/peers":
 		c, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		ps, e := d.Transport.Peers(c)
 		if e != nil {
-			return nil, e
+			// Redis health does not determine whether local/cached LAN routes work.
+			pairs, err := d.Store.Pairs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, pair := range pairs {
+				if pair.Ready() {
+					ps = append(ps, pair.Peer)
+				}
+			}
+		}
+		self := d.Transport.LocalPeer()
+		seenSelf := false
+		for _, peer := range ps {
+			if peer.ID == self.ID {
+				seenSelf = true
+			}
+		}
+		if !seenSelf {
+			ps = append(ps, self)
 		}
 		out := []map[string]any{}
 		for _, p := range ps {
@@ -325,7 +352,10 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			}
 			item["age_seconds"] = age
 			item["health"] = "online"
-			if age > 90 {
+			item["self"] = p.ID == d.Config.DeviceID
+			if e != nil && p.ID != d.Config.DeviceID {
+				item["health"] = "unconfirmed"
+			} else if age > 90 {
 				item["health"] = "possibly_offline"
 			}
 			out = append(out, item)
@@ -360,43 +390,65 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		if kind == "receipt" || strings.HasPrefix(kind, "pair_") {
 			return nil, errors.New("receipts are internal")
 		}
+		if kind != "result" {
+			if e = d.checkArchivedSend(ctx, a.Session, to, a.ToSession); e != nil {
+				return nil, e
+			}
+		}
 		m := d.base(to, kind)
 		m.Text = a.Text
 		m.Session = a.Session
 		m.ToSession = a.ToSession
 		m.Conversation = a.Conversation
 		m.ReplyTo = a.ReplyTo
-		pairCtx, pairCancel := context.WithTimeout(ctx, 10*time.Second)
-		pair, e := d.ensurePair(pairCtx, to)
-		pairCancel()
-		if e != nil {
-			return nil, e
-		}
-		if kind == "file" {
-			if !pair.Ready() {
-				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
-			}
-			if d.Files == nil {
-				return nil, errors.New("OSS is not configured")
-			}
-			d.fileMu.Lock()
-			key, keyErr := d.Transport.PairKey(ctx, to)
-			if keyErr != nil {
-				d.fileMu.Unlock()
-				return nil, keyErr
-			}
-			m.File, e = d.Files.Upload(ctx, a.Path, to, key)
-			d.fileMu.Unlock()
+		local := to == d.Config.DeviceID
+		var pair Pair
+		if !local {
+			pairCtx, pairCancel := context.WithTimeout(ctx, 10*time.Second)
+			pair, e = d.ensurePair(pairCtx, to)
+			pairCancel()
 			if e != nil {
 				return nil, e
 			}
 		}
+		if kind == "file" {
+			if !local && !pair.Ready() {
+				return map[string]any{"status": "pairing_pending", "pairing": pair, "next": "retry file send after both devices confirm"}, nil
+			}
+			unlock, lockErr := d.fileMu.acquire(ctx, m.ID)
+			if lockErr != nil {
+				return nil, lockErr
+			}
+			key, keyErr := d.fileKey(ctx, to)
+			if keyErr != nil {
+				unlock()
+				return nil, keyErr
+			}
+			m.File, e = d.Files.stage(a.Path, to, m.ID, key)
+			unlock()
+			if e != nil {
+				return nil, e
+			}
+			if e = d.Store.setMetadata(ctx, "staged-file:"+m.ID, "pending"); e != nil {
+				os.Remove(d.Files.stagedPath(m.ID))
+				return nil, e
+			}
+			if local {
+				if e = d.Store.setMetadata(ctx, "local-file-key:"+m.ID, "v1"); e != nil {
+					os.Remove(d.Files.stagedPath(m.ID))
+					return nil, e
+				}
+			}
+		}
 		if e = d.Store.Enqueue(ctx, m); e != nil {
+			if m.File != nil {
+				os.Remove(d.Files.stagedPath(m.ID))
+			}
 			return nil, e
 		}
 		d.notify()
 		status := "pending"
-		if !pair.Ready() {
+		if !local && !pair.Ready() {
 			status = "pairing_pending"
 		}
 		return map[string]any{"id": m.ID, "status": status, "message": m, "pairing": pair}, nil
@@ -423,6 +475,15 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 			if e != nil || len(rs) > 0 {
 				return rs, e
 			}
+			// Archival changes registry metadata, not the inbox tail. Release
+			// this chat's idle waiter on the existing notification so its watcher
+			// can observe archived and exit before a quick same-chat reattach.
+			// Other chats and legacy workers retain ordinary long-poll behavior.
+			if a.Session != "" {
+				if ep, err := d.Store.Endpoint(ctx, d.Config.DeviceID, a.Session); err == nil && !ep.ArchivedAt.IsZero() {
+					return []Record{}, nil
+				}
+			}
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -434,9 +495,6 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 	case "/v1/get":
 		return d.Store.Get(ctx, a.ID)
 	case "/v1/file/fetch":
-		if d.Files == nil {
-			return nil, errors.New("OSS is not configured")
-		}
 		r, e := d.Store.Get(ctx, a.ID)
 		if e != nil {
 			return nil, e
@@ -444,14 +502,16 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		if r.Direction != "in" {
 			return nil, errors.New("only received files can be fetched")
 		}
-		d.fileMu.Lock()
-		key, keyErr := d.Transport.PairKey(ctx, r.Message.From)
+		unlock, lockErr := d.fileMu.acquire(ctx, a.ID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		defer unlock()
+		key, keyErr := d.receivedFileKey(ctx, r.Message)
 		if keyErr != nil {
-			d.fileMu.Unlock()
 			return nil, keyErr
 		}
 		p, e := d.Files.Download(ctx, r.Message, key)
-		d.fileMu.Unlock()
 		if e != nil {
 			return nil, e
 		}
@@ -460,6 +520,13 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (any, 
 		}
 		return map[string]string{"id": a.ID, "path": p}, nil
 	case "/v1/task/claim":
+		addressed, e := d.Store.Get(ctx, a.ID)
+		if e != nil {
+			return nil, e
+		}
+		if strings.HasPrefix(addressed.Message.Conversation, "channel-") && addressed.Message.ToSession != "" && addressed.Message.ToSession != a.Session {
+			return nil, errors.New("channel task is addressed to another chat; retain the exact registered worker")
+		}
 		if a.Lease == 0 {
 			a.Lease = 900
 		}
@@ -512,7 +579,7 @@ func Call(ctx context.Context, home, op string, a APIRequest) (json.RawMessage, 
 	client := &http.Client{Transport: transport}
 	res, e := client.Do(req)
 	if e != nil {
-		return nil, errors.New("daemon unavailable; run codex-link daemon start (or daemon run)")
+		return nil, errors.New("daemon unavailable; run agent-link daemon start (or daemon run)")
 	}
 	defer res.Body.Close()
 	var out json.RawMessage

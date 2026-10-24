@@ -1,0 +1,547 @@
+package cli
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"encoding/xml"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"os/user"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/jom-io/codex-link/internal/link"
+	"golang.org/x/term"
+)
+
+// Main is shared by the neutral command and the backwards-compatible codex-link entry.
+func Main() {
+	if e := Run(os.Args[1:]); e != nil {
+		b, _ := json.Marshal(map[string]string{"error": e.Error()})
+		fmt.Fprintln(os.Stderr, string(b))
+		os.Exit(1)
+	}
+}
+func help() {
+	fmt.Print(`agent-link — encrypted cooperation between agent harnesses on your Macs
+
+Setup:
+  init [--config FILE] [--secrets-env]   Save config and Keychain credentials
+  configure [same options]       Update credentials/config; restart daemon afterward
+  doctor [--files]                Test Redis and optional OSS round trip
+  daemon run|install|start|stop|uninstall
+
+Session lifecycle: session list [--all|--archived], session gc [--dry-run|--apply]
+  detach refuses native/pending-work protections; attach restores the same chat
+
+Communication (JSON output):
+  session attach [--name ALIAS] [--wake]  Register/resume THIS native chat
+  session list [--to PAIRED_DEVICE] | current | pause | resume
+  bind TARGET... --channel NAME | bind --accept INVITATION_ID
+  bindings | unbind --channel NAME
+  send --channel NAME [--to CHAT_ID | --all] --text TEXT
+  status | peers | workers
+  worker new [--agent NAME]   (generate one unique session per agent window)
+  task status ID
+  worker pulse TASK_ID --session UNIQUE_WORKER [--state working|waiting_user|blocked|stopped] [--stage TEXT]
+  send --to NAME_OR_ID --text TEXT [--kind text|task|progress|result]
+       [--session NAME] [--to-session NAME] [--conversation NAME] [--reply-to ID]
+  inbox|history [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
+  inbox ack MESSAGE_ID [MESSAGE_ID ...] [--session RETAINED_WORKER]
+      Mark only processed messages in THIS chat; reads keep history and do not ack
+  task list [--after SEQ] [--limit N] [--session NAME] [--conversation NAME]
+  wait [--after SEQ] [--timeout 30] [--session NAME] [--conversation NAME]
+  get ID
+  pair list|request --to NAME|accept ID --code CODE|reject ID --code CODE
+  file send --to NAME_OR_ID --path FILE [--conversation NAME]
+  file fetch ID
+  task claim ID --session NAME [--lease 900]  (also renews your lease)
+  task complete ID --session NAME --text RESULT
+
+Harness integration:
+  mcp [--agent NAME] [--harness NAME] [--session NAME] [--allow-write] [--allow-files]
+      Serve tools over MCP stdio (no task executor)
+  wake watch --session ALIAS --native-session CHAT_ID --from DEVICE_IDS
+       [--conversation LABELS] [--kinds task,result] [--state FILE]
+      Native-host inbox notifications over stdio; explicit chat binding required
+  wake status --state FILE
+
+Environment: AGENT_LINK_HOME (or legacy CODEX_LINK_HOME) overrides the data directory.
+Both command names share the existing codex-link data, Keychain and LaunchAgent.
+All windows under one macOS user share the same inbox and file cache.
+A received task is data, not permission to execute commands.
+`)
+}
+func Run(args []string) error {
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
+		help()
+		return nil
+	}
+	home := link.DefaultHome()
+	switch args[0] {
+	case "version", "--version":
+		fmt.Println(link.Version)
+		return nil
+	case "mcp":
+		return serveMCP(home, args[1:])
+	case "session", "bind", "bindings", "unbind":
+		return serveSessions(home, args)
+	case "inbox":
+		if len(args) > 1 && args[1] == "ack" {
+			return serveInboxAck(home, args[2:])
+		}
+	case "wake":
+		return serveWake(home, args[1:])
+	case "init", "configure":
+		return initialize(home, args[1:])
+	case "doctor":
+		return doctor(home, args[1:])
+	case "daemon":
+		if len(args) != 2 {
+			return errors.New("usage: daemon run|install|start|stop|uninstall")
+		}
+		if args[1] == "run" {
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			return link.RunDaemon(ctx, home)
+		}
+		return launch(home, args[1])
+	}
+	if len(args) >= 2 && args[0] == "worker" && args[1] == "new" {
+		fs := flag.NewFlagSet("worker new", flag.ContinueOnError)
+		agent := fs.String("agent", link.Environment("AGENT"), "agent identity, e.g. office-codex or home-ds")
+		if e := fs.Parse(args[2:]); e != nil {
+			return e
+		}
+		if fs.NArg() != 0 {
+			return errors.New("unexpected worker new arguments")
+		}
+		session, e := newSession(*agent)
+		if e != nil {
+			return e
+		}
+		result := map[string]string{"session": session}
+		if *agent != "" {
+			result["agent"] = *agent
+		}
+		return printJSON(result)
+	}
+	op := args[0]
+	rest := args[1:]
+	if op == "file" || op == "task" || op == "pair" || op == "worker" {
+		if len(rest) < 1 {
+			return errors.New("missing operation")
+		}
+		op += "/" + rest[0]
+		rest = rest[1:]
+	}
+	switch op {
+	case "workers", "worker/pulse", "task/status", "status", "peers", "send", "inbox", "history", "wait", "get", "file/send", "file/fetch", "task/list", "task/claim", "task/complete", "pair/list", "pair/request", "pair/accept", "pair/reject":
+	default:
+		return errors.New("unknown command; use --help")
+	}
+	var a link.APIRequest
+	if op == "worker/pulse" || op == "task/status" || op == "get" || op == "file/fetch" || op == "task/claim" || op == "task/complete" || op == "pair/accept" || op == "pair/reject" {
+		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
+			return errors.New("message/task ID required before flags")
+		}
+		a.ID = rest[0]
+		rest = rest[1:]
+	}
+	fs := flag.NewFlagSet(op, flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.StringVar(&a.State, "state", "working", "worker state: working|waiting_user|blocked|stopped")
+	fs.StringVar(&a.Stage, "stage", "", "current stage (no secrets)")
+	fs.StringVar(&a.Code, "code", "", "pairing verification code")
+	fs.StringVar(&a.To, "to", "", "recipient device name or ID")
+	fs.StringVar(&a.Text, "text", "", "message text")
+	fs.StringVar(&a.Kind, "kind", "text", "message type")
+	fs.StringVar(&a.Session, "session", "", "local session alias")
+	fs.StringVar(&a.ToSession, "to-session", "", "target session alias")
+	fs.StringVar(&a.Conversation, "conversation", "", "shared task/conversation label")
+	fs.StringVar(&a.Channel, "channel", "", "bound channel; resolves exact chat recipient")
+	fs.BoolVar(&a.All, "all", false, "explicit fanout to accepted channel members; separate tasks per recipient")
+	fs.StringVar(&a.ReplyTo, "reply-to", "", "related message ID")
+	fs.StringVar(&a.Path, "path", "", "file to send")
+	fs.Int64Var(&a.After, "after", 0, "local sequence cursor; wait -1 starts at current tail")
+	fs.IntVar(&a.Limit, "limit", 100, "maximum records (1–1000)")
+	fs.IntVar(&a.Timeout, "timeout", 30, "wait timeout (1–60 seconds)")
+	fs.IntVar(&a.Lease, "lease", 900, "task lease in seconds")
+	var jsonOutput bool
+	fs.BoolVar(&jsonOutput, "json", true, "JSON output (always enabled)")
+	if e := fs.Parse(rest); e != nil {
+		return e
+	}
+	if fs.NArg() != 0 {
+		return errors.New("unexpected arguments; put the ID before flags")
+	}
+	if op == "file/send" {
+		var e error
+		a.Path, e = filepath.Abs(a.Path)
+		if e != nil {
+			return e
+		}
+		if a.Path == "" {
+			return errors.New("file path required")
+		}
+	}
+	if a.Channel != "" && a.Session == "" {
+		if e := currentSession(context.Background(), home, &a); e != nil {
+			return e
+		}
+	}
+	timeout := 75 * time.Second
+	if strings.HasPrefix(op, "file/") {
+		timeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	raw, e := link.Call(ctx, home, op, a)
+	if e != nil {
+		return e
+	}
+	var out any
+	if e = json.Unmarshal(raw, &out); e != nil {
+		return e
+	}
+	return printJSON(out)
+}
+func printJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+func initialize(home string, args []string) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	configFile := fs.String("config", "", "YAML/JSON setup file; optional credentials imported into Keychain")
+	secretsEnv := fs.Bool("secrets-env", false, "read credentials from AGENT_LINK_* or legacy CODEX_LINK_* environment variables")
+	if e := fs.Parse(args); e != nil {
+		return e
+	}
+	if fs.NArg() != 0 {
+		return errors.New("unexpected init arguments")
+	}
+	if _, e := link.Call(context.Background(), home, "status", link.APIRequest{}); e == nil {
+		return errors.New("stop the daemon before changing its configuration")
+	}
+	c, e := link.LoadConfig(home)
+	existing := e == nil
+	var fileSecrets link.Secrets
+	if *configFile != "" {
+		next, imported, readErr := link.ReadSetupFile(*configFile)
+		if readErr != nil {
+			return readErr
+		}
+		fileSecrets = imported
+		if existing {
+			next.DeviceID = c.DeviceID
+		}
+		c = next
+	}
+	c.Defaults()
+	var s link.Secrets
+	if existing {
+		old, e := link.LoadSecrets(c)
+		if e == nil {
+			s = old
+		}
+	}
+	if *secretsEnv {
+		s.RedisPassword = link.Environment("REDIS_PASSWORD")
+		s.AccessKeyID = link.Environment("OSS_ACCESS_KEY_ID")
+		s.AccessKeySecret = link.Environment("OSS_ACCESS_KEY_SECRET")
+		s.SecurityToken = link.Environment("OSS_SECURITY_TOKEN")
+		if *configFile == "" && !existing {
+			return errors.New("--secrets-env requires --config for a new installation")
+		}
+	}
+	if fileSecrets.RedisPassword != "" {
+		s.RedisPassword = fileSecrets.RedisPassword
+		s.AccessKeyID = fileSecrets.AccessKeyID
+		s.AccessKeySecret = fileSecrets.AccessKeySecret
+		s.SecurityToken = fileSecrets.SecurityToken
+	}
+	reader := bufio.NewReader(os.Stdin)
+	ask := func(label, current string) (string, error) {
+		fmt.Fprintf(os.Stderr, "%s [%s]: ", label, current)
+		v, e := reader.ReadString('\n')
+		if e != nil {
+			return "", e
+		}
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return current, nil
+		}
+		return v, nil
+	}
+	secret := func(label, current string) (string, error) {
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return "", errors.New("interactive credentials require a terminal; use --config --secrets-env for automation")
+		}
+		fmt.Fprintf(os.Stderr, "%s (hidden; blank keeps existing): ", label)
+		b, e := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if e != nil {
+			return "", e
+		}
+		if len(b) == 0 {
+			return current, nil
+		}
+		return string(b), nil
+	}
+	if *configFile == "" && !*secretsEnv {
+		if c.Name == "" {
+			u, _ := user.Current()
+			if u != nil && link.ValidLabel(u.Username) {
+				c.Name = u.Username
+			} else {
+				c.Name = "mac"
+			}
+		}
+		if c.Workspace == "" {
+			c.Workspace = "personal"
+		}
+		if c.Name, e = ask("Device name", c.Name); e != nil {
+			return e
+		}
+		if c.Workspace, e = ask("Workspace name", c.Workspace); e != nil {
+			return e
+		}
+		if c.Redis.Address, e = ask("Redis host:port", c.Redis.Address); e != nil {
+			return e
+		}
+		if c.Redis.Username, e = ask("Redis ACL username", c.Redis.Username); e != nil {
+			return e
+		}
+		c.Redis.TLS = true
+		c.Redis.AllowInsecure = false
+		if c.OSS.Endpoint, e = ask("Aliyun OSS HTTPS endpoint (blank disables files)", c.OSS.Endpoint); e != nil {
+			return e
+		}
+		if c.OSS.Endpoint != "" {
+			if c.OSS.Bucket, e = ask("OSS bucket", c.OSS.Bucket); e != nil {
+				return e
+			}
+			if c.OSS.Prefix, e = ask("OSS object prefix", c.OSS.Prefix); e != nil {
+				return e
+			}
+		}
+	}
+	if !*secretsEnv && fileSecrets.RedisPassword == "" {
+		if s.RedisPassword, e = secret("Redis password", s.RedisPassword); e != nil {
+			return e
+		}
+		if c.OSS.Endpoint != "" {
+			if s.AccessKeyID, e = secret("OSS AccessKey ID", s.AccessKeyID); e != nil {
+				return e
+			}
+			if s.AccessKeySecret, e = secret("OSS AccessKey secret", s.AccessKeySecret); e != nil {
+				return e
+			}
+			if s.SecurityToken, e = secret("Optional STS security token", s.SecurityToken); e != nil {
+				return e
+			}
+		}
+	}
+	c.Defaults()
+	if strings.Contains(c.Redis.Address, "CHANGE_ME") || strings.Contains(s.AccessKeyID, "CHANGE_ME") {
+		return errors.New("fill in the configuration template before initialization")
+	}
+	if e = c.Validate(); e != nil {
+		return e
+	}
+	if c.Redis.TLS && s.RedisPassword == "" {
+		return errors.New("public Redis requires a password")
+	}
+	if c.OSS.Endpoint != "" && (c.OSS.Bucket == "" || s.AccessKeyID == "" || s.AccessKeySecret == "") {
+		return errors.New("OSS bucket and credentials are required when OSS is enabled")
+	}
+	identity, identityErr := link.EnsureIdentity(&s)
+	if identityErr != nil {
+		return identityErr
+	}
+	if existing && c.DeviceID != identity.ID() {
+		return errors.New("existing device identity cannot be replaced silently")
+	}
+	c.DeviceID = identity.ID()
+	if e = link.SaveSecrets(c, s); e != nil {
+		return fmt.Errorf("save Keychain credentials: %w", e)
+	}
+	if e = link.SaveConfig(home, c); e != nil {
+		return e
+	}
+	return printJSON(map[string]any{"device_id": c.DeviceID, "name": c.Name, "workspace": c.Workspace, "configured": true, "next": "agent-link doctor --files; agent-link daemon start"})
+}
+func doctor(home string, args []string) error {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	checkFiles := fs.Bool("files", false, "perform encrypted OSS upload/download/delete")
+	if e := fs.Parse(args); e != nil {
+		return e
+	}
+	c, e := link.LoadConfig(home)
+	if e != nil {
+		return e
+	}
+	s, e := link.LoadSecrets(c)
+	if e != nil {
+		return e
+	}
+	t, e := link.NewTransport(c, s)
+	if e != nil {
+		return e
+	}
+	defer t.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if e = t.Ping(ctx); e != nil {
+		return errors.New("Redis connection failed; check address, TLS and credentials")
+	}
+	if e = t.Heartbeat(ctx); e != nil {
+		return errors.New("Redis registration failed; check ACL permissions")
+	}
+	ps, e := t.Peers(ctx)
+	if e != nil {
+		return errors.New("Redis peer registry read failed")
+	}
+	if *checkFiles && c.OSS.Endpoint != "" {
+		f, e := link.NewFiles(c, s, home)
+		if e != nil {
+			return e
+		}
+		if e = f.Check(ctx); e != nil {
+			return e
+		}
+	}
+	return printJSON(map[string]any{"redis": "ok", "registered": true, "peers": ps, "oss_tested": *checkFiles && c.OSS.Endpoint != ""})
+}
+func xmlText(s string) string {
+	var b strings.Builder
+	xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+func launch(home, action string) error {
+	if runtime.GOOS != "darwin" {
+		return errors.New("LaunchAgent management requires macOS; use daemon run on other systems")
+	}
+	u, e := user.Current()
+	if e != nil {
+		return e
+	}
+	h, e := os.UserHomeDir()
+	if e != nil {
+		return e
+	}
+	label := "io.jom.codex-link"
+	domain := "gui/" + u.Uid
+	path := filepath.Join(h, "Library", "LaunchAgents", label+".plist")
+	target := domain + "/" + label
+	command := func(args ...string) error {
+		cmd := exec.Command("/bin/launchctl", args...)
+		b, e := cmd.CombinedOutput()
+		if e != nil {
+			return fmt.Errorf("launchctl %s failed (%v): %s", args[0], e, strings.TrimSpace(string(b)))
+		}
+		return nil
+	}
+	switch action {
+	case "install", "start":
+		if _, e := link.LoadConfig(home); e != nil {
+			return e
+		}
+		exe, e := os.Executable()
+		if e != nil {
+			return e
+		}
+		exe, e = filepath.EvalSymlinks(exe)
+		if e != nil {
+			return e
+		}
+		if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+			return e
+		}
+		if e = os.MkdirAll(home, 0700); e != nil {
+			return e
+		}
+		logs := filepath.Join(home, "daemon.log")
+		fd, e := os.OpenFile(logs, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if e != nil {
+			return e
+		}
+		fd.Close()
+		plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>%s</string><key>ProgramArguments</key><array><string>%s</string><string>daemon</string><string>run</string></array><key>EnvironmentVariables</key><dict><key>AGENT_LINK_HOME</key><string>%s</string><key>CODEX_LINK_HOME</key><string>%s</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>15</integer><key>StandardOutPath</key><string>%s</string><key>StandardErrorPath</key><string>%s</string></dict></plist>`, label, xmlText(exe), xmlText(home), xmlText(home), xmlText(logs), xmlText(logs))
+		if e = os.WriteFile(path, []byte(plist), 0600); e != nil {
+			return e
+		}
+		if action == "start" {
+			loaded := func() bool { return exec.Command("/bin/launchctl", "print", target).Run() == nil }
+			if e = startLaunchAgent(loaded, command, domain, target, path, time.Sleep); e != nil {
+				return e
+			}
+			// bootstrap only confirms service registration, not socket readiness.
+			for attempt := 0; attempt < 20; attempt++ {
+				ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+				_, err := link.Call(ctx, home, "status", link.APIRequest{})
+				cancel()
+				if err == nil {
+					return printJSON(map[string]string{"launch_agent": path, "action": action})
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			return errors.New("daemon registered but socket not ready; inspect its private log and retry daemon start; data preserved")
+		}
+		return printJSON(map[string]string{"launch_agent": path, "action": action})
+	case "stop", "uninstall":
+		if exec.Command("/bin/launchctl", "print", target).Run() == nil {
+			if e = command("bootout", target); e != nil {
+				return e
+			}
+			// A successful bootout is asynchronous while daemon shutdown drains its
+			// own sockets. Do not replace/start the binary until registration is gone.
+			gone := false
+			for attempt := 0; attempt < 120; attempt++ {
+				if exec.Command("/bin/launchctl", "print", target).Run() != nil {
+					gone = true
+					break
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
+			if !gone {
+				return errors.New("daemon is still stopping; data and binary retained, retry after shutdown")
+			}
+		}
+		if action == "uninstall" {
+			if e = os.Remove(path); e != nil && !os.IsNotExist(e) {
+				return e
+			}
+		}
+		return printJSON(map[string]string{"action": action, "data": "preserved"})
+	default:
+		return errors.New("unknown daemon action")
+	}
+}
+
+func startLaunchAgent(loaded func() bool, command func(...string) error, domain, target, path string, pause func(time.Duration)) error {
+	var last error
+	for attempt := 0; attempt < 120; attempt++ {
+		if loaded() {
+			last = command("kickstart", "-k", target)
+		} else {
+			last = command("bootstrap", domain, path)
+		}
+		if last == nil {
+			return nil
+		}
+		pause(250 * time.Millisecond)
+	}
+	return last
+}

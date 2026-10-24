@@ -211,7 +211,7 @@ func approveNative(ctx context.Context, p Pair) bool {
 		return false
 	}
 	script := `on run argv
-set answer to display dialog ("Pair codex-link with " & item 1 of argv & "?" & return & "Compare this code on BOTH Macs: " & item 2 of argv & return & "Device: " & item 3 of argv & return & "Only confirm if you intended this connection.") with title "codex-link pairing" buttons {"Reject", "Confirm"} default button "Reject" giving up after 120
+set answer to display dialog ("Pair agent-link with " & item 1 of argv & "?" & return & "Compare this code on BOTH Macs: " & item 2 of argv & return & "Device: " & item 3 of argv & return & "Only confirm if you intended this connection.") with title "agent-link pairing" buttons {"Reject", "Confirm"} default button "Reject" giving up after 120
 if gave up of answer then return "timeout"
 return button returned of answer
 end run`

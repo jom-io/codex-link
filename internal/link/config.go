@@ -16,10 +16,12 @@ import (
 )
 
 type Config struct {
-	PairingHeadless bool   `json:"pairing_headless,omitempty" yaml:"pairing_headless,omitempty"`
-	DeviceID        string `json:"device_id" yaml:"device_id"`
-	Name            string `json:"name" yaml:"name"`
-	Workspace       string `json:"workspace" yaml:"workspace"`
+	Sessions        SessionPolicy `json:"sessions,omitempty" yaml:"sessions,omitempty"`
+	PairingHeadless bool          `json:"pairing_headless,omitempty" yaml:"pairing_headless,omitempty"`
+	DeviceID        string        `json:"device_id" yaml:"device_id"`
+	Name            string        `json:"name" yaml:"name"`
+	Workspace       string        `json:"workspace" yaml:"workspace"`
+	Routing         string        `json:"routing,omitempty" yaml:"routing,omitempty"`
 	Redis           struct {
 		Address       string `json:"address" yaml:"address"`
 		Username      string `json:"username,omitempty" yaml:"username,omitempty"`
@@ -46,8 +48,19 @@ type Secrets struct {
 	SecurityToken   string `json:"security_token,omitempty" yaml:"security_token,omitempty"`
 }
 
+// Environment accepts the neutral prefix first, including an explicitly empty value.
+// Legacy names remain available for existing installations and automation.
+func Environment(name string) string {
+	if s, ok := os.LookupEnv("AGENT_LINK_" + name); ok {
+		return s
+	}
+	return os.Getenv("CODEX_LINK_" + name)
+}
+
+// DefaultHome intentionally preserves the legacy storage location. A rename must
+// not create a second identity, database, pairing set or running daemon.
 func DefaultHome() string {
-	if s := os.Getenv("CODEX_LINK_HOME"); s != "" {
+	if s := Environment("HOME"); s != "" {
 		return s
 	}
 	h, _ := os.UserHomeDir()
@@ -61,7 +74,7 @@ func LoadConfig(home string) (Config, error) {
 	var c Config
 	b, e := os.ReadFile(ConfigPath(home))
 	if e != nil {
-		return c, fmt.Errorf("run codex-link init first: %w", e)
+		return c, fmt.Errorf("run agent-link init first: %w", e)
 	}
 	if e = json.Unmarshal(b, &c); e != nil {
 		return c, e
@@ -70,6 +83,10 @@ func LoadConfig(home string) (Config, error) {
 	return c, c.Validate()
 }
 func (c *Config) Defaults() {
+	c.Sessions.defaults()
+	if c.Routing == "" {
+		c.Routing = "auto"
+	}
 	if c.DeviceID == "" {
 		c.DeviceID = NewID()
 	}
@@ -93,6 +110,12 @@ func (c *Config) Defaults() {
 	}
 }
 func (c Config) Validate() error {
+	if e := c.Sessions.validate(); e != nil {
+		return e
+	}
+	if c.Routing != "" && c.Routing != "auto" && c.Routing != "cloud" {
+		return errors.New("routing must be auto or cloud")
+	}
 	if !ValidLabel(c.DeviceID) || !ValidLabel(c.Name) || !ValidLabel(c.Workspace) {
 		return errors.New("device ID, name and workspace must contain 1–64 ASCII letters, digits, '.', '_' or '-'")
 	}

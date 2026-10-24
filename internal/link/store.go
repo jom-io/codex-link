@@ -61,6 +61,10 @@ func (s *Store) Cursor(ctx context.Context) (string, error) {
 	return v, e
 }
 func (s *Store) Accept(ctx context.Context, m *Message, cursor string, receipt *Message) error {
+	return s.accept(ctx, m, cursor, receipt, "")
+}
+
+func (s *Store) accept(ctx context.Context, m *Message, cursor string, receipt *Message, route string) error {
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return e
@@ -78,15 +82,25 @@ func (s *Store) Accept(ctx context.Context, m *Message, cursor string, receipt *
 				return e
 			}
 		}
-		if n > 0 && receipt != nil {
+		// A LAN delivery can have committed before its ACK was lost. A later
+		// Redis duplicate still needs a receipt, without inserting the task twice.
+		if receipt != nil {
 			b, _ := json.Marshal(receipt)
-			if _, e = tx.ExecContext(ctx, "INSERT INTO messages(id,body,direction,status) VALUES(?,?,'out','pending')", receipt.ID, string(b)); e != nil {
+			if _, e = tx.ExecContext(ctx, "INSERT OR IGNORE INTO messages(id,body,direction,status) VALUES(?,?,'out','pending')", receipt.ID, string(b)); e != nil {
+				return e
+			}
+		}
+		if route != "" {
+			if _, e = tx.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO NOTHING", "route:"+m.ID, route); e != nil {
 				return e
 			}
 		}
 	}
-	if _, e = tx.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES('cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", cursor); e != nil {
-		return e
+	// Direct/local delivery must never reset the independent Redis cursor.
+	if cursor != "" {
+		if _, e = tx.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES('cursor',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", cursor); e != nil {
+			return e
+		}
 	}
 	return tx.Commit()
 }
@@ -95,7 +109,7 @@ func scanRecords(rows *sql.Rows) ([]Record, error) {
 	for rows.Next() {
 		var r Record
 		var body string
-		if e := rows.Scan(&r.Seq, &body, &r.Direction, &r.Status, &r.Owner, &r.LeaseUntil, &r.Result); e != nil {
+		if e := rows.Scan(&r.Seq, &body, &r.Direction, &r.Status, &r.Owner, &r.LeaseUntil, &r.Result, &r.Route); e != nil {
 			return nil, e
 		}
 		if e := json.Unmarshal([]byte(body), &r.Message); e != nil {
@@ -109,7 +123,7 @@ func (s *Store) List(ctx context.Context, after int64, limit int, history bool, 
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-	q := "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE seq>? AND json_extract(body,'$.kind')!='receipt' AND json_extract(body,'$.kind') NOT LIKE 'pair_%'"
+	q := recordSelect + " WHERE seq>? AND json_extract(body,'$.kind')!='receipt' AND json_extract(body,'$.kind') NOT LIKE 'pair_%'"
 	args := []any{after}
 	if !history {
 		q += " AND direction='in'"
@@ -135,7 +149,7 @@ func (s *Store) ListTasks(ctx context.Context, after int64, limit int, session, 
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-	q := "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE seq>? AND direction='in' AND json_extract(body,'$.kind')='task'"
+	q := recordSelect + " WHERE seq>? AND direction='in' AND json_extract(body,'$.kind')='task'"
 	args := []any{after}
 	if session != "" {
 		q += " AND (COALESCE(json_extract(body,'$.to_session'),'')='' OR json_extract(body,'$.to_session')=?)"
@@ -155,7 +169,7 @@ func (s *Store) ListTasks(ctx context.Context, after int64, limit int, session, 
 	return scanRecords(rows)
 }
 func (s *Store) Pending(ctx context.Context) ([]Record, error) {
-	rows, e := s.db.QueryContext(ctx, "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE direction='out' AND status='pending' ORDER BY CASE WHEN json_extract(body,'$.kind') LIKE 'pair_%' THEN 0 ELSE 1 END,seq LIMIT 100")
+	rows, e := s.db.QueryContext(ctx, recordSelect+" WHERE direction='out' AND status='pending' ORDER BY CASE WHEN json_extract(body,'$.from')=json_extract(body,'$.to') THEN 0 WHEN json_extract(body,'$.kind') LIKE 'pair_%' THEN 1 ELSE 2 END,seq LIMIT 100")
 	if e != nil {
 		return nil, e
 	}
@@ -167,7 +181,7 @@ func (s *Store) MarkSent(ctx context.Context, id string) error {
 	return e
 }
 func (s *Store) Get(ctx context.Context, id string) (Record, error) {
-	rows, e := s.db.QueryContext(ctx, "SELECT seq,body,direction,status,owner,lease,result FROM messages WHERE id=?", id)
+	rows, e := s.db.QueryContext(ctx, recordSelect+" WHERE id=?", id)
 	if e != nil {
 		return Record{}, e
 	}
@@ -211,7 +225,7 @@ func (s *Store) Claim(ctx context.Context, id, owner string, seconds int) error 
 			return errors.New("task is already completed")
 		}
 		if r.Status == "claimed" && r.LeaseUntil > now && r.Owner != owner {
-			return fmt.Errorf("task is claimed by session %q until %s; use a unique --session for each Codex window, or wait for the lease to expire", r.Owner, time.Unix(r.LeaseUntil, 0).UTC().Format(time.RFC3339))
+			return fmt.Errorf("task is claimed by session %q until %s; use a unique --session for each agent window, or wait for the lease to expire", r.Owner, time.Unix(r.LeaseUntil, 0).UTC().Format(time.RFC3339))
 		}
 		return errors.New("task could not be claimed; refresh `task list` and use its exact message.id")
 	}

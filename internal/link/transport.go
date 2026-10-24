@@ -16,11 +16,12 @@ import (
 var ErrNotPaired = errors.New("peer is not mutually confirmed yet")
 
 type Transport struct {
-	client   *redis.Client
-	config   Config
-	identity *Identity
-	store    *Store
-	prefix   string
+	client    *redis.Client
+	config    Config
+	identity  *Identity
+	store     *Store
+	prefix    string
+	endpoints []string
 }
 
 func NewTransport(c Config, s Secrets) (*Transport, error) {
@@ -67,8 +68,17 @@ redis.call('SET',KEYS[2],id,'EX',ARGV[3])
 return id`)
 
 func (t *Transport) Publish(ctx context.Context, m Message) error {
-	if e := m.Validate(); e != nil {
+	payload, e := t.Encode(ctx, m)
+	if e != nil {
 		return e
+	}
+	return publishScript.Run(ctx, t.client, []string{t.Inbox(m.To), t.prefix + "sent:" + m.To + ":" + m.ID}, string(payload), t.config.StreamMaxLen, t.config.StreamTTLHours*3600).Err()
+}
+
+// Encode/DecodeEnvelope keep the same authenticated wire format on Redis and LAN.
+func (t *Transport) Encode(ctx context.Context, m Message) ([]byte, error) {
+	if e := m.Validate(); e != nil {
+		return nil, e
 	}
 	b, _ := json.Marshal(m)
 	w := Wire{From: m.From, To: m.To, Public: t.identity.SignPublic()}
@@ -78,20 +88,19 @@ func (t *Transport) Publish(ctx context.Context, m Message) error {
 	} else {
 		key, e := t.PairKey(ctx, m.To)
 		if e != nil {
-			return e
+			return nil, e
 		}
 		codec, e := NewCodec(t.config.Workspace, key)
 		if e != nil {
-			return e
+			return nil, e
 		}
 		w.Payload, e = codec.Seal(b)
 		if e != nil {
-			return e
+			return nil, e
 		}
 	}
 	w.Signature = t.identity.Sign(w.signedBytes())
-	payload, _ := json.Marshal(w)
-	return publishScript.Run(ctx, t.client, []string{t.Inbox(m.To), t.prefix + "sent:" + m.To + ":" + m.ID}, string(payload), t.config.StreamMaxLen, t.config.StreamTTLHours*3600).Err()
+	return json.Marshal(w)
 }
 func (t *Transport) Read(ctx context.Context, cursor string) ([]redis.XMessage, error) {
 	streams, e := t.client.XRead(ctx, &redis.XReadArgs{Streams: []string{t.Inbox(t.config.DeviceID), cursor}, Count: 100, Block: 25 * time.Second}).Result()
@@ -107,13 +116,20 @@ func (t *Transport) Read(ctx context.Context, cursor string) ([]redis.XMessage, 
 	return streams[0].Messages, nil
 }
 func (t *Transport) Decode(raw redis.XMessage) (Message, error) {
-	var m Message
 	payload, ok := raw.Values["envelope"].(string)
-	if !ok || len(payload) > 256*1024 {
+	if !ok {
+		return Message{}, errors.New("invalid envelope")
+	}
+	return t.DecodeEnvelope([]byte(payload))
+}
+
+func (t *Transport) DecodeEnvelope(payload []byte) (Message, error) {
+	var m Message
+	if len(payload) > 256*1024 {
 		return m, errors.New("invalid envelope")
 	}
 	var w Wire
-	if e := json.Unmarshal([]byte(payload), &w); e != nil {
+	if e := json.Unmarshal(payload, &w); e != nil {
 		return m, e
 	}
 	if w.To != t.config.DeviceID || w.From != identityID(w.Public) || !verifySignature(w.Public, w.signedBytes(), w.Signature) {
@@ -157,7 +173,22 @@ func (t *Transport) Decode(raw redis.XMessage) (Message, error) {
 func (t *Transport) Heartbeat(ctx context.Context) error {
 	p := t.LocalPeer()
 	b, _ := json.Marshal(p)
-	return t.client.HSet(ctx, t.prefix+"devices", p.ID, string(b)).Err()
+	if e := t.client.HSet(ctx, t.prefix+"devices", p.ID, string(b)).Err(); e != nil {
+		return e
+	}
+	// A separate signed registry preserves old clients' Peer signatures.
+	if len(t.endpoints) == 0 {
+		// A transient doctor must not withdraw the running daemon's endpoint.
+		if t.store != nil {
+			t.client.HDel(ctx, t.prefix+"direct", p.ID)
+		}
+		return nil
+	}
+	a := t.directAdvertisement()
+	b, _ = json.Marshal(a)
+	// Optional discovery ACLs must not disable otherwise-working cloud delivery.
+	t.client.HSet(ctx, t.prefix+"direct", p.ID, string(b))
+	return nil
 }
 func (t *Transport) Peers(ctx context.Context) ([]Peer, error) {
 	raw, e := t.client.HGetAll(ctx, t.prefix+"devices").Result()
@@ -179,6 +210,9 @@ func (t *Transport) Peers(ctx context.Context) ([]Peer, error) {
 	return out, nil
 }
 func (t *Transport) Resolve(ctx context.Context, to string) (string, error) {
+	if to == t.config.Name || to == t.config.DeviceID || to == "self" {
+		return t.config.DeviceID, nil
+	}
 	if len(to) == 32 {
 		if _, e := hex.DecodeString(to); e == nil {
 			return to, nil

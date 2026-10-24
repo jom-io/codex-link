@@ -1,5 +1,80 @@
 # Changelog
 
+## v0.2.0 - 2026-10-24
+
+- Automatic shared-daemon local delivery, authenticated private IPv4 direct
+  delivery and existing Redis/OSS fallback for both CLI and MCP. Signed endpoint
+  discovery reuses Redis and local cache; no new discovery dependency.
+- Immutable encrypted file staging, verified receiver cache before LAN ACK,
+  lost-ACK fallback deduplication, durable upload retries and route diagnostics.
+
+- Rename the product/CLI to agent-link, with a shared codex-link compatibility entry and generic harness Skill.
+- Preserve protocol v2, identity, Keychain, LaunchAgent, database, history/cache and OSS/crypto namespaces for in-place mixed-version upgrades.
+- Add neutral AGENT_LINK_* environment settings with legacy fallback and a documented Git/source upgrade and retained rollback snapshots.
+- Add bounded MCP stdio tools: read-only by default, explicit messaging/task and file opt-ins, fixed per-process session ownership; no command executor. Native wake remains separately opt-in.
+- Allocate independent named worker sessions for separate chats sharing one MCP process, while retaining explicit owner resumption.
+- Document Codex, Claude Code and DeepSeek Harness integration and extend compatibility/MCP tests.
+- Add persistent exact-chat registration, readable automatic aliases, explicitly accepted channel bindings and recovery of the same worker/endpoint after reopen.
+- Add opt-in Codex desktop and DeepSeek Harness native inbox wake, busy/approval and uncertain-admission guards, and exact handled-message ACKs to prevent duplicate queued notifications.
+- Add passive native presence leases, protected soft archival, pinning, complete paged peer discovery and original identity/binding restoration. Unfinished work remains protected; archival releases only the archived chat's own idle listener.
+- Verify both-Mac CLI/daemon upgrades, local/LAN/cloud routing, file integrity, real Codex/DeepSeek native wake, active-session protection and a real idle archive/listener-exit/identity-restore/new-task-wake cycle. Retain the first failed stop-stage and its passing regression evidence.
+
+## v0.2.0-rc.12
+
+- Release an archived chat's empty inbox long-poll on its existing daemon notification, so an idle listener can exit before a quick same-chat reattach. Preserve saved replies and other chats/legacy waits; no extra polling service or native model turn.
+
+## v0.2.0-rc.11
+
+- Add passive native presence leases, scoped lifecycle previews, protected soft archival, pinning and restoration of the original chat identity/bindings.
+- Check task/message/file guards in the archive transaction and preserve native-admission safeguards; expired leases do not imply unfinished work is complete. Preserve history, pause/wake scope and file permissions.
+- Filter discovery views and use complete authenticated paged snapshots with local cache freshness; retain legacy directory interoperability without the 64-chat truncation/host cap.
+- Stop only archived endpoints’ own listeners, retaining queues/journals. Unsupported native presence remains unknown; no model pulse or resolver-based historical chat loading.
+
+## v0.2.0-rc.10
+
+- Add explicit per-chat handled-message acknowledgement through CLI and opt-in MCP.
+  Preserve read-only reads, history, task ownership and separate file permissions.
+- Filter handled IDs during scans and pending wake rechecks, including after
+  restart, so receipts processed while busy do not cause a late duplicate wake.
+- Reject foreign/outgoing messages and unfinished tasks atomically; keep
+  already-admitted native prompts subject to the host’s existing semantics.
+
+## v0.2.0-rc.7
+
+- Use normal native turn submission for local Codex chats. The cloud-only
+  user-message-admission extension caused a visible prompt followed by a native
+  validation error without starting a model turn.
+- Keep explicitly verified rejections in the admission journal. Unknown
+  outcomes remain quarantined and are never automatically reset or retried.
+
+## v0.2.0-rc.6
+
+- Add an opt-in Codex desktop native adapter that discovers the selected chat's
+  actual owning window over the existing private local coordination socket.
+  Reuse it on any configured Mac with a compatible desktop protocol; no CLI
+  resume process, new network listener or model credentials are introduced.
+- Check native busy/approval state, retain the chat's existing settings, and
+  quarantine uncertain prompt admission in a private per-binding journal.
+- Add per-chat LaunchAgent installation, read-only compatibility checks,
+  disable support and native-adapter regression tests.
+
+## v0.2.0-rc.5
+
+- Serialize file work by message ID instead of one global file lock, so a slow
+  incoming transfer cannot block unrelated same-device sends or cached fetches.
+- Cancel file-lock waiters with their request and release unused lock entries.
+
+## v0.2.0-rc.4
+
+- Add opt-in inbox wake notifications with explicit native-chat/sender binding,
+  durable bounded queues, restart recovery, deduplication, cooldown and rate limits.
+- Add a DeepSeek Harness Cordis adapter using process-native session state and
+  idempotent queued prompts; stop its listener on plugin unload/disable.
+- Add an explicitly bound macOS UI fallback for absent native APIs. Preserve
+  drafts and approvals; uncertain native failures never switch to UI submission.
+- Ship adapter resources with source/release installs without enabling them or
+  changing existing identity, history, credentials, MCP permissions or routing.
+
 ## v0.1.3 — 2026-10-03
 
 - Add worker new, worker pulse, workers and task status commands.

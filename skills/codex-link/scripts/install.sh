@@ -1,7 +1,6 @@
 #!/bin/sh
 set -eu
-# Fetch the repository installer into a temporary file; do not pipe curl into a shell.
-ref="${CODEX_LINK_INSTALL_REF:-master}"
+ref="${AGENT_LINK_INSTALL_REF:-${CODEX_LINK_INSTALL_REF:-master}}"
 case "$ref" in *[!a-zA-Z0-9._-]*|'') echo "Invalid installation ref" >&2; exit 1 ;; esac
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT HUP INT TERM

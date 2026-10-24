@@ -1,203 +1,157 @@
-# codex-link
+# agent-link
+
+Persistent [chat registration and binding](docs/sessions.zh-CN.md) provide stable automatic aliases, explicit channel peers and reopen recovery through both CLI and MCP.
+
+Optional [inbox wake adapters](docs/wake.md) resume an explicitly bound chat on
+new tasks/results. DeepSeek Harness uses its process-native session API; a
+strictly bound macOS UI fallback is opt-in. Existing installations remain manual
+until a local binding is enabled. CLI, MCP and automatic routing are unchanged.
 
 [简体中文](README.zh-CN.md) · [MIT License](LICENSE)
 
-An encrypted message and file bridge for Codex sessions on two Macs. One lightweight Go daemon per macOS user receives messages continuously; every local Codex window uses the same CLI, inbox, task history and downloaded files.
+Encrypted messaging, file transfer and task coordination between agent harnesses on your Macs. Codex, Claude Code and DeepSeek Harness use the same per-user Go daemon through a JSON CLI or MCP stdio. Model credentials stay with the harness.
 
-**Status:** v0.1.3. See the [changelog](CHANGELOG.md) for release notes. The application provides communication, not automatic remote command execution or automatic awakening of idle Codex chats. Aliyun OSS is the first supported file provider.
+**v0.2.0:** renamed from codex-link. `codex-link` remains a compatible command. Both names share the existing identity, pairing, SQLite history/cache and daemon; no reinitialization is needed. This repository and Go module retain their original `jom-io/codex-link` location. Use the reviewed `v0.2.0` tag for this stable release.
 
-## What it does
+## What it provides
 
-- Automatic device identities, customizable names, first-contact pairing and session/conversation routing.
-- Redis Streams with a durable SQLite outbox, retries, duplicate suppression and delivery receipts.
-- Offline catch-up and local history shared by all windows under the same macOS user.
-- Task claiming with renewable leases and transactional completion replies.
-- Encrypted Aliyun OSS transfers, bounded-memory file processing and SHA-256 verification.
-- Keychain credentials/device keys, mutual native pairing dialogs, a private Unix socket, LaunchAgent management and a Codex skill.
-- GitHub Release installation, source installation, updates, rollback and uninstall.
-
-## Architecture
+- Device identities, mutual human-approved pairing and pairwise encrypted messages/files.
+- Redis Streams, SQLite outbox/retries/deduplication, receipts and offline catch-up within retention limits.
+- Session/conversation routing, task claims/renewable leases and transactional completion replies.
+- Explicit worker pulses and service/worker liveness, without fabricating worker activity.
+- Aliyun OSS encrypted files, bounded-memory transfer and SHA-256 verification.
+- macOS Keychain, private Unix socket, LaunchAgent and generic harness Skill.
+- MCP stdio tools, read-only by default; opt-in cooperation and file operations.
+- Automatic delivery: shared-daemon local inbox, authenticated private IPv4 LAN,
+  then Redis/OSS fallback. CLI and MCP use the same routing.
 
 ```text
-Mac A                                      Mac B
-Codex windows                              Codex windows
-     |                                          |
-Codex skill -> CLI                         Codex skill -> CLI
-     |                                          |
-Unix socket -> Go daemon                   Unix socket -> Go daemon
-     | SQLite + Keychain                        | SQLite + Keychain
-     +------------- Redis Streams --------------+
-     +------------- private Aliyun OSS ---------+
-
-GitHub repository / Releases: source, skill and Mac binaries
+Codex / Claude Code / DeepSeek Harness
+                 | CLI or MCP stdio + shared Skill
+           agent-link local daemon
+                 | SQLite + Keychain
+        Local inbox / encrypted LAN / Redis + OSS fallback
+                 | encrypted pairwise transport
+           agent-link peer daemon
+                 | another active harness
 ```
 
-No inbound public port is required on either Mac. Redis carries signed discovery/pairing events and encrypted application messages; OSS stores encrypted file frames. Routing IDs, device names/public keys, timing, sizes and object paths remain visible. Each device generates Ed25519/X25519 keys automatically. First contact requires confirmation on both devices; pairwise encryption keys are derived automatically and never copied by users. Session aliases are not an access-control boundary.
+The daemon transports data without executing received commands. Idle chats remain manual unless an explicit local native wake binding is enabled. `delivered` means saved by the peer daemon, not read or executed. Session aliases route messages and own task leases; they are not a sandbox.
 
-## Install
+## Upgrade from Git
 
-For a complete second-Mac walkthrough, see [installation guide (Chinese)](docs/installation.zh-CN.md). It includes Release installation, local configuration, startup, pairing and verification.
-
-### Stable Release (recommended)
-
-Download and inspect the installer from the chosen repository tag, then run it:
+Requires Go 1.25+. Use an existing checkout or clone the repository; choose the reviewed branch/tag and verify the same commit on both Macs:
 
 ```sh
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
-export PATH="$HOME/.local/bin:$PATH"
-codex-link version
+git clone https://github.com/jom-io/codex-link.git agent-link
+cd agent-link
+git fetch origin tag v0.2.0
+git switch --detach v0.2.0
+git rev-parse HEAD
+AGENT_LINK_VERSION=v0.2.0 sh scripts/install.sh --source "$PWD"
+"$HOME/.local/bin/agent-link" version
+"$HOME/.local/bin/codex-link" status
+"$HOME/.local/bin/agent-link" peers
 ```
 
-The installer selects Apple Silicon (`arm64`) or Intel (`amd64`), checks the Release SHA-256 and installs the binary and skill. Published checksums detect corruption, not a separate publisher signature. Binaries are currently unsigned and not notarized. Download links work after the corresponding Release is published.
+For subsequent stable upgrades, fetch the reviewed release tag and switch to it in a clean checkout; verify the same full commit on both Macs and set the matching `AGENT_LINK_VERSION`. Do not discard local changes. The installer uses `~/.codex/bin/codex-go` when present, or Go otherwise; `AGENT_LINK_GO` can select the executable. Builds use a shared Go cache and stable output paths. Existing managed link daemons are stopped only for replacement, then restarted. Other services are untouched. Validate device ID, paired peer and history after upgrading. Do **not** run `init` again on an existing installation.
 
-### Source or source ZIP
+Each installer keeps rollback binaries/skills in `$BIN_DIR/.agent-link-backups/<old-binary-sha256>/`. Before reverting to a version without routing, let pending file sends finish: older daemons cannot upload the new staged-file outbox. Stop the link daemon, restore the saved binaries and matching skills from that snapshot, and start it. History, cached files and Keychain entries are never removed by upgrade. On an installation/restart failure, inspect the reported error and use the retained snapshot; there is no automatic rollback after a partial install.
 
-Requires Go 1.25+; normal Release installation needs no Go runtime or Python environment.
+Release packages include both command names and both skills. Use the release's inspected `scripts/install.sh` with `AGENT_LINK_VERSION=v0.2.0` to pin this version. Existing `CODEX_LINK_VERSION`, `CODEX_LINK_BIN_DIR` and `CODEX_LINK_SKILL_DIR` installer settings are accepted. A verified extracted package can also be installed with `sh scripts/install.sh --package /absolute/package`.
+
+## New installation
+
+Copy `config.example.yaml` to the ignored `config.local.yaml`, fill credentials locally and protect it with mode 600. Never paste it into a chat. Both devices use the same workspace and OSS bucket/prefix, different device names, and independently generated identities.
 
 ```sh
-git clone https://github.com/jom-io/codex-link.git
-cd codex-link
-git checkout v0.1.3
-sh scripts/install.sh --source "$PWD"
+agent-link init --config /absolute/config.local.yaml
+agent-link doctor --files
+agent-link daemon start
+agent-link peers
 ```
 
-For a source ZIP, extract it and run the same source-install command. To develop before a release exists, build the checked-out `master` tree directly.
+Each Mac automatically creates Ed25519/X25519 identities in Keychain. First contact displays a six-digit code on both Macs; compare the codes and intended devices before confirming on each. New devices do not inherit trust. Files queued before pairing must be resent after approval. A received task is never permission to execute it.
 
-## Configure both Macs
+Public Redis should use TLS. Explicitly opting into plaintext Redis still exposes the Redis password in transit, despite payload encryption. See [infrastructure](docs/infrastructure.md), [architecture/security boundaries](docs/architecture.md) and the [detailed setup guide](docs/installation.zh-CN.md).
 
-Copy the template and edit it locally:
+## Automatic routing
+
+The daemon chooses the route without changing CLI/MCP calls:
+
+1. **Local:** destination `self`, this device's name or ID uses the same per-user
+   daemon's durable inbox, without pairing to itself or contacting Redis/OSS.
+   Use `--to-session` for the other chat's unique session.
+2. **LAN:** confirmed devices try an encrypted direct push on a reachable private
+   IPv4 subnet. A separate signed endpoint record in the existing Redis directory
+   provides discovery; locally cached records work during Redis outages while
+   their address remains reachable. Initial discovery/pairing still needs Redis.
+3. **Cloud:** failed/unavailable LAN or an older peer uses the existing Redis
+   stream. Files upload to OSS only on fallback. An offline peer can catch up
+   within cloud retention, as before.
+
+`agent-link get MESSAGE_ID` includes `route: local|lan|cloud` once routed; status
+also includes `routing` and `lan_listening`. Files are snapshotted encrypted
+before enqueueing, retry without rereading a mutable user path, and are verified
+and cached by a LAN receiver before it acknowledges delivery. `file fetch` uses
+the verified cache first. A lost ACK and cloud retry reuse the same message ID.
+
+`routing: auto` is the default for existing configurations without rewriting them.
+It opens only an encrypted-data delivery endpoint on an ephemeral TCP port;
+the administration API stays on the private Unix socket. Candidates must be
+numeric IPs on a private local subnet and must authenticate as the pinned peer.
+There is no multicast discovery, public-IP setup, NAT traversal or VPN installer.
+IPv6-only/isolated Wi-Fi networks fall back to cloud. `routing: cloud` disables
+the LAN listener and attempts, while same-daemon delivery remains local. See
+[routing design and acceptance](docs/routing.md).
+
+## Harness integration
+
+Read [harness setup](docs/harnesses.md) for Codex/Claude skills, Claude MCP registration and other harnesses. DeepSeek Harness supports the generic Skill and MCP client; use the version-specific profile overlay documented there. The selected model is independent of agent-link.
 
 ```sh
-cp config.example.yaml config.local.yaml
-chmod 600 config.local.yaml
-codex-link init --config "$PWD/config.local.yaml"
-codex-link doctor --files
-codex-link daemon start
-codex-link status
-codex-link peers
+# Read-only tool adapter. The host launches this command as an MCP subprocess.
+agent-link mcp --harness deepseek-harness
+# Permit user-authorized messaging/tasks; add --allow-files for selected files.
+agent-link mcp --harness claude-code --allow-write
 ```
 
-`config.local.yaml` is gitignored. Never commit or paste a filled configuration into a chat. Both Macs use the same `workspace`, OSS bucket and prefix, and different device names. Each Mac automatically generates its identity and saves private keys in Keychain. There is no `workspace_key` configuration.
+Each MCP process gets a default session. For shared hosts such as DeepSeek desktop, each chat calls `agent_link_worker_new` once and passes its returned session on subsequent tools; `agent_link_context` reports it. A reconnecting worker holding a lease can explicitly retain its session with `--session`, but separate active windows must never share one lease owner. No shell, daemon-management, credential-configuration or pairing-accept MCP tools are exposed. MCP uses newline-delimited JSON-RPC stdio; calls are serialized and inbox waits are bounded to 30 seconds. It has no HTTP listener.
 
-Template fields:
-
-| Field | Meaning |
-| --- | --- |
-| `name`, `workspace` | ASCII letters/digits plus `.`, `_`, `-`; 1–64 characters |
-| `redis.address` | `host:port`, without a URL scheme |
-| `redis.username`, `redis.db` | ACL username and database number |
-| `redis.tls` | TLS enabled for public Redis |
-| `redis.allow_insecure` | Explicit opt-in when a deployment has no TLS; Redis credentials then travel in plaintext |
-| `oss.endpoint`, `oss.region` | HTTPS Aliyun regional endpoint; region is inferred for standard endpoints |
-| `oss.bucket`, `oss.prefix` | Private bucket and shared object prefix |
-| `credentials.redis_password` | Redis password |
-| `credentials.access_key_id`, `access_key_secret` | Prefix-restricted RAM credentials |
-| `credentials.security_token` | Optional STS token; manual renewal is required |
-| `max_file_bytes` | Default 1 GiB per file |
-| `stream_max_len` | Approximate stream cap per device; default 10,000 entries, including receipts |
-| `stream_ttl_hours` | Stream/dedup expiration after the last write; default 720 hours |
-
-Set OSS endpoint and bucket to empty strings to use messages only. See [infrastructure configuration](docs/infrastructure.md) for Redis ACLs and OSS policies. `doctor --files` makes a small upload/download/delete probe, not a production durability test.
-
-Initialization imports credentials into macOS Keychain (`io.jom.codex-link`, account = device ID). The persisted `config.json` contains no passwords or keys. Secure or delete the filled YAML after importing. Interactive `init` uses hidden secret prompts; `--secrets-env` is also available with a configuration file using `CODEX_LINK_REDIS_PASSWORD`, `CODEX_LINK_OSS_ACCESS_KEY_ID`, `CODEX_LINK_OSS_ACCESS_KEY_SECRET`, and optional `CODEX_LINK_OSS_SECURITY_TOKEN`.
-
-## First-contact pairing: confirm on both Macs
-
-Send normally, e.g. `codex-link send --to office-mac --text "Hello"`. If the devices are not paired, the message remains queued and each Mac shows a native confirmation dialog. Compare the six-digit code shown on BOTH Macs, check the intended device name/ID, and click Confirm on both. The application pins the peer identity, derives the encryption keys, and automatically sends the queued message. Rejecting or confirming only one side does not release it.
-
-Adding a third Mac requires new pairwise confirmations; it does not inherit access to existing pairs. Requests expire after ten minutes; dialogs time out after two minutes. If a request expires or is rejected, deliberately initiate a new request. A reinstall that loses identity keys creates a new device ID and requires pairing again.
-
-For headless/accessibility workflows, set `pairing_headless: true` and use the explicit local commands after human confirmation:
+## CLI cooperation
 
 ```sh
-codex-link pair request --to office-mac
-codex-link pair list
-codex-link pair accept REQUEST_ID --code 123456
-# or: codex-link pair reject REQUEST_ID --code 123456
+agent-link worker new
+agent-link send --to home-mac --kind task --session UNIQUE_SESSION --conversation check --text "Read the tool version and report it; do not change files."
+agent-link inbox --session UNIQUE_SESSION --conversation check --after 0
+agent-link task claim TASK_MESSAGE_ID --session UNIQUE_SESSION --lease 900
+agent-link worker pulse TASK_MESSAGE_ID --session UNIQUE_SESSION --stage checking
+agent-link task complete TASK_MESSAGE_ID --session UNIQUE_SESSION --text "Verified result ..."
+agent-link file send --to home-mac --path /absolute/selected/report --conversation check
+agent-link file fetch FILE_MESSAGE_ID
 ```
 
-Normal macOS use needs no CLI pairing step. First-contact file sends initiate pairing and return `pairing_pending`; retry the file command after confirmation. The skill handles that retry. Previously queued text/tasks send automatically.
+Claim the task's own `message.id`, never `reply_to`. Immediately acknowledge a claim. Keep checking messages between asynchronous process polls; pulse actual progress at most 60 seconds apart and renew the lease before expiry. Do not generate detached heartbeat loops. Complete only when the task is verified. Commands emit JSON. Inbox cursors are local `seq` values; advance after processing and page through full results. Files are authenticated before a path is returned; they are never automatically extracted/executed. [Full commands](skills/agent-link/references/commands.md).
 
-## Send messages and cooperate
+## Compatibility and limits
 
-```sh
-codex-link send --to office-mac --text "Please check your development environment"
-codex-link send --to office-mac --kind task --session requester --conversation setup --text "Check Go version; report the result. Do not install anything."
-codex-link inbox --after 0 --session worker --conversation setup
-codex-link task list --session worker-home-window-a --conversation setup --json
-codex-link task claim TASK_ID --session worker-home-window-a --lease 900
-codex-link send --to office-mac --kind progress --session worker-home-window-a --to-session requester --conversation setup --reply-to TASK_ID --text "Claimed; starting work. I will keep checking messages while this runs."
-codex-link task complete TASK_ID --session worker-home-window-a --text "Go version verified: ..."
-codex-link wait --after 12 --session requester --conversation setup --timeout 30
-codex-link history --after 0
-codex-link get MESSAGE_ID
-```
-
-All communication commands emit JSON. IDs must precede flags. `--after` is a local SQLite sequence cursor; advance it after processing records. Reading never removes shared messages. Inbox/wait include incoming records; history includes both directions. Receipts are hidden. A wait lasts at most 60 seconds; default `--after 0` can return existing records, and `--after -1` deliberately starts at the current tail.
-
-Use `--to-session` to route a message to a chosen alias; local inbox filtering by `--session` includes that alias and device-wide messages. Session aliases are provided by the calling Codex window, not inferred from Codex internals. Session filtering is not an access-control boundary.
-
-`pending` means saved locally, `sent` means accepted by Redis, `delivered` means saved by the receiving daemon. Task execution is a separate step. A received task is data, not permission: Codex executes only within human-authorized scope. Renewable leases reduce simultaneous execution; a crashed worker may be replaced after lease expiry, so task actions should be idempotent. `task list` displays exact task IDs and claim state. Claim with the task message’s `message.id`, never `reply_to`. Each concurrently working Codex window must use its own stable `--session` alias, since the alias owns and renews the lease. After claiming, acknowledge immediately and keep polling messages between asynchronous process checks.
-
-## Transfer files
-
-```sh
-codex-link file send --to office-mac --path /absolute/path/report.zip --conversation setup
-codex-link file fetch FILE_MESSAGE_ID
-```
-
-The receive command returns a verified local absolute path accessible to all windows under the same user. Directories must be archived explicitly; the application never automatically extracts or executes attachments. Uploads encrypt to a temporary local file before streaming to OSS. Downloads decrypt to a temporary file, check size and SHA-256, then rename into the cache. This bounds RAM usage but needs temporary disk space approximately equal to the encrypted upload or downloaded file size. Failed upload/message pairs can leave orphaned objects; configure OSS lifecycle cleanup.
-
-## Use the Codex skill
-
-The installer places [the skill](skills/codex-link/SKILL.md) in `${CODEX_HOME:-~/.codex}/skills/codex-link`. It becomes available in a subsequent Codex turn. Example:
-
-> Use codex-link to ask office-mac to check its Go installation, and send its verified result back.
-
-The native pairing dialog can appear even when no chat is active. The daemon continuously saves messages during local work. Codex must poll between asynchronous task steps to read them; an idle session is not automatically awakened. Claim acknowledgments and periodic progress messages tell the sender that a worker is active. The skill keeps installation/configuration details, command syntax and the cooperation workflow together.
-
-## Operate, upgrade and remove
-
-```sh
-codex-link daemon stop
-codex-link configure --config /absolute/path/config.local.yaml
-codex-link daemon start
-curl -fL https://raw.githubusercontent.com/jom-io/codex-link/v0.1.3/scripts/install.sh -o /tmp/codex-link-install.sh
-CODEX_LINK_VERSION=v0.1.3 sh /tmp/codex-link-install.sh
-# Remove: sh scripts/uninstall.sh
-```
-
-Data defaults to `~/Library/Application Support/codex-link/`: `config.json`, `state.db`, `files/`, `run.sock`, `daemon.log`. `CODEX_LINK_HOME` overrides it and must be short enough for a Unix socket. The LaunchAgent is `~/Library/LaunchAgents/io.jom.codex-link.plist`; only one managed daemon is supported per macOS user. LaunchAgents start after login, not before login. Keychain must be available to the logged-in user.
-
-Updates preserve state and keep the previous binary/skill. To roll back, stop the service, restore the `.previous` binary and matching skill, then start. Uninstall preserves history, file cache and Keychain credentials. Local history/cache/logs currently require manual cleanup while the daemon is stopped; do not remove SQLite files while it is running.
-
-## Reliability and limits
-
-- Outbox persistence survives restarts; successful Redis appends are atomically deduplicated within the retention window.
-- Incoming storage, cursor advancement and receipt enqueueing share one SQLite transaction.
-- Transport is at least once, with duplicate suppression. Task side effects are not guaranteed exactly once.
-- Offline recovery is bounded by stream trimming, expiration, Redis persistence and OSS lifecycle rules. Configure Redis persistence/backups; never describe retention settings as an absolute no-loss guarantee.
-- Signed registry entries persist for discovery. Confirmed peer names/keys are pinned locally for offline name lookup. Heartbeats are every 30 seconds; `seen_at` older than 90 seconds indicates an offline peer. Duplicate names require explicit IDs.
-- STS refresh, automatic Codex wakeup, GUI, automatic directory extraction, cross-user inboxes and S3-compatible storage are not implemented in this release.
-- No cloud service credentials ship with the project. Live two-Mac validation still requires your infrastructure and credentials.
+- Protocol v2, Redis namespace, crypto domain separation and OSS defaults are unchanged, allowing mixed v0.1.3/v0.2 peers.
+- Data stays in `~/Library/Application Support/codex-link/`; Keychain service and LaunchAgent remain `io.jom.codex-link`. Only one managed link daemon per macOS user.
+- `AGENT_LINK_HOME` overrides the data directory, with legacy `CODEX_LINK_HOME` fallback. An explicitly empty neutral value suppresses the legacy override. New and old credential environment prefixes are supported; no identity is regenerated during upgrade.
+- LaunchAgents start after login and require accessible Keychain. No Windows/Linux installer or service-manager integration is added.
+- At-least-once transport/deduplication does not guarantee exactly-once task effects. A crashed/expired lease needs task-specific idempotency. Stale activity does not prove a process stopped.
+- Cloud operators can see names, public keys, routing, timings, sizes and object paths; local SQLite/cache are protected by user permissions, not database encryption. Static pairwise keys do not provide forward secrecy.
+- Redis/OSS retention bounds offline recovery. STS refresh remains manual. The optional local wake adapter only notifies a bound chat. No remote command executor, standalone GUI, archive extraction, cross-user inbox or new storage provider is added.
 
 ## Development
 
 ```sh
 go test ./...
-go test -race ./...   # Requires a working C toolchain for Go's race runtime.
+go test -race ./...
 go vet ./...
-go test ./internal/link -run '^$' -bench BenchmarkFileEncryption -benchmem
-sh scripts/package.sh v0.1.3
+sh scripts/package.sh v0.2.0
 ```
 
-Tests cover automatic key agreement, mutual approval/rejection, new-device isolation, encrypted envelopes, file truncation/tampering/limits, SQLite restart persistence, concurrent task claims, delivery receipts, two daemon task/result exchange and offline catch-up with an embedded Redis test server. OSS tests use a TLS HTTP fixture and signed SDK requests; this is not a substitute for live OSS permission validation. Production code uses pure-Go SQLite and builds with `CGO_ENABLED=0`.
+On a machine with a Go policy wrapper, run Go commands through that wrapper (for example `~/.codex/bin/codex-go test ./...`). Package/source scripts detect it automatically and accept `AGENT_LINK_GO`. Package artifacts use stable `dist/` filenames for arm64/amd64, including legacy filenames. No model API client or additional Go dependency is introduced by MCP.
 
-GitHub Actions tests pushes/PRs; pushing a `v*` tag tests and publishes both Mac packages and checksums to Releases. See [architecture](docs/architecture.md), [verification](docs/verification.md), and [contributing](CONTRIBUTING.md).
-
-## License
-
-MIT, copyright 2026 jom-io. Dependencies retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
-
-Worker monitoring: run `worker new` once per window, use that session to claim tasks, then call `worker pulse TASK_ID --session SESSION --stage "building"` while actively polling. Query `workers`, `task status TASK_ID`, and `peers` for worker and service health. Pulses do not renew leases. See the skill for timeout and disconnect semantics.
+Tests cover pairing/encryption, leases/persistence, encrypted files, daemon exchange, environment compatibility and MCP lifecycle/permission/session boundaries. Two-Mac acceptance additionally verifies mixed-version delivery, preserved identity/history, and a real harness tool exchange. See [verification](docs/verification.md), [changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md).
