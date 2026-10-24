@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0-rc.12
+
+- Release an archived chat's empty inbox long-poll on its existing daemon notification, so an idle listener can exit before a quick same-chat reattach. Preserve saved replies and other chats/legacy waits; no extra polling service or native model turn.
+
 ## v0.2.0-rc.11
 
 - Add passive native presence leases, scoped lifecycle previews, protected soft archival, pinning and restoration of the original chat identity/bindings.

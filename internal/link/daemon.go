@@ -475,6 +475,15 @@ func (d *Daemon) dispatch(ctx context.Context, path string, a APIRequest) (out a
 			if e != nil || len(rs) > 0 {
 				return rs, e
 			}
+			// Archival changes registry metadata, not the inbox tail. Release
+			// this chat's idle waiter on the existing notification so its watcher
+			// can observe archived and exit before a quick same-chat reattach.
+			// Other chats and legacy workers retain ordinary long-poll behavior.
+			if a.Session != "" {
+				if ep, err := d.Store.Endpoint(ctx, d.Config.DeviceID, a.Session); err == nil && !ep.ArchivedAt.IsZero() {
+					return []Record{}, nil
+				}
+			}
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()

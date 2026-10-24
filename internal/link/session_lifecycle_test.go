@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,74 @@ import (
 	"testing"
 	"time"
 )
+
+func TestArchiveReleasesOnlyItsIdleInboxWait(t *testing.T) {
+	d, _, ep := lifecycleFixture(t)
+	ctx := context.Background()
+	other := attachTest(t, d, "wait-other-native")
+	presenceTest(t, d, ep, "idle")
+	startWait := func(session string) (<-chan error, context.CancelFunc) {
+		waitCtx, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() {
+			v, e := d.dispatch(waitCtx, "/v1/wait", APIRequest{Session: session, Timeout: 30, Limit: 100})
+			if e == nil && len(v.([]Record)) != 0 {
+				e = errors.New("archive notification fabricated a message")
+			}
+			done <- e
+		}()
+		return done, cancel
+	}
+	archivedWait, cancelArchived := startWait(ep.Session)
+	defer cancelArchived()
+	otherWait, cancelOther := startWait(other.Session)
+	defer cancelOther()
+	legacyWait, cancelLegacy := startWait("unregistered-legacy-worker")
+	defer cancelLegacy()
+	if _, e := d.dispatch(ctx, "/v1/session/detach", APIRequest{Session: ep.Session}); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case e := <-archivedWait:
+		if e != nil {
+			t.Fatal(e)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("archived chat kept its idle watcher waiting for an unrelated message")
+	}
+	for _, done := range []<-chan error{otherWait, legacyWait} {
+		select {
+		case e := <-done:
+			t.Fatal("another chat or unregistered legacy wait was interrupted", e)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	// The same result must hold when the caller starts after archival, and it
+	// must not require the native adapter's minute-long presence timer.
+	bounded, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	if v, e := d.dispatch(bounded, "/v1/wait", APIRequest{Session: ep.Session, Timeout: 30, Limit: 100}); e != nil || len(v.([]Record)) != 0 {
+		t.Fatal("already archived wait did not return empty promptly", v, e)
+	}
+	cancelOther()
+	cancelLegacy()
+	for _, done := range []<-chan error{otherWait, legacyWait} {
+		if e := <-done; !errors.Is(e, context.Canceled) {
+			t.Fatal("unrelated wait changed its cancellation semantics", e)
+		}
+	}
+	// An archived reader can still retrieve saved in-flight replies. The early
+	// empty return is a lifecycle signal, never a reason to hide inbox history.
+	m := sample("result")
+	m.To, m.ToSession = d.Config.DeviceID, ep.Session
+	if e := d.Store.Accept(ctx, &m, "", nil); e != nil {
+		t.Fatal(e)
+	}
+	v, e := d.dispatch(ctx, "/v1/wait", APIRequest{Session: ep.Session, Timeout: 30, Limit: 100})
+	if e != nil || len(v.([]Record)) != 1 || v.([]Record)[0].Message.ID != m.ID {
+		t.Fatal("archived wait hid saved history", v, e)
+	}
+}
 
 func lifecycleFixture(t *testing.T) (*Daemon, *time.Time, Endpoint) {
 	t.Helper()
