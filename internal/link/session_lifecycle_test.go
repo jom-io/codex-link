@@ -334,3 +334,32 @@ func TestLifecycleUncertainJournalBlocksEvenWithIdleObservation(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestLifecycleEstablishedLegacyReceiverIsNotAnUnusedTemporary(t *testing.T) {
+	d, now, ep := lifecycleFixture(t)
+	ctx := context.Background()
+	ep.LifecycleVersion = 0
+	ep.Receiver = "connected"
+	ep.ReceiverAt = *now
+	ep.LifecycleSince = time.Time{}
+	ep.LastUsedAt = time.Time{}
+	if e := d.Store.saveValue(ctx, endpointKey(ep.Device, ep.Session), ep); e != nil {
+		t.Fatal(e)
+	}
+	if e := d.initLifecycle(ctx); e != nil {
+		t.Fatal(e)
+	}
+	*now = now.Add(26 * time.Hour)
+	if got := gcTest(t, d, ep, true); len(got) != 0 {
+		t.Fatal("established legacy receiver treated as unused temporary", got)
+	}
+	*now = now.Add(8 * 24 * time.Hour)
+	got := gcTest(t, d, ep, true)
+	if len(got) != 1 || got[0].Archived || !strings.Contains(strings.Join(got[0].Blocked, ","), "native-state-unconfirmed") {
+		t.Fatal("unconfirmed established legacy receiver archived", got)
+	}
+	presenceTest(t, d, ep, "running")
+	if got = gcTest(t, d, ep, true); len(got) != 0 {
+		t.Fatal("fresh active lease lost", got)
+	}
+}

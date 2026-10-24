@@ -359,7 +359,7 @@ func (d *Daemon) archiveSession(ctx context.Context, ep Endpoint, reason string,
 	if e != nil {
 		return v, e
 	}
-	if len(bs) > 0 && (ep.PresenceStatus == "unknown" || ep.HostState == "") {
+	if (len(bs) > 0 || !ep.ReceiverAt.IsZero()) && (ep.PresenceStatus == "unknown" || ep.HostState == "") {
 		v.Blocked = append(v.Blocked, "native-state-unconfirmed")
 	}
 	if ep.StatePath != "" {
@@ -447,7 +447,7 @@ func (d *Daemon) gcSessions(ctx context.Context, a APIRequest) ([]GCDecision, er
 			return nil, e
 		}
 		reason := ""
-		if len(bs) == 0 && ep.LastHostSeenAt.IsZero() && !ep.LastUsedAt.IsZero() && now.Sub(ep.LastUsedAt) >= time.Duration(p.TemporaryHours)*time.Hour {
+		if len(bs) == 0 && ep.LastHostSeenAt.IsZero() && ep.ReceiverAt.IsZero() && !ep.LastUsedAt.IsZero() && now.Sub(ep.LastUsedAt) >= time.Duration(p.TemporaryHours)*time.Hour {
 			reason = "unused-temporary"
 		}
 		if (view.Status == "offline" || view.Status == "unknown") && !ep.LastUsedAt.IsZero() && now.Sub(ep.LastUsedAt) >= time.Duration(p.ArchiveDays)*24*time.Hour {
